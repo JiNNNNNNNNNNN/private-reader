@@ -1,0 +1,33 @@
+<idea-plugin>
+  <id>com.lv.tool.private-reader</id>
+  <name>private reader</name>
+  <version>1.0</version>
+  <vendor email="lvjinzhou666@163.com" >J1N-</vendor>
+
+  <description>
+    私人书库
+    "private reader"是一款小说阅读插件
+    旨在帮助书友在工作闲暇之余,感受文字的魅力
+  </description>
+
+  <change-notes>
+    v1.0.0 楔子 倚靠在座椅靠背，刚刚完成提交上来的新需求，心里不禁泛起一阵欣喜与空虚。大脑渐渐从极速运转的状态中抽离出来,昨晚看的那一章精彩片段缓缓在脑海浮现……
+    ps:从0开始，一切都先满足作者本人的阅读需求。
+  </change-notes>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
+  <idea-version since-build="173.0"/>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+       on how to target different products -->
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Add your extensions here -->
+  </extensions>
+
+  <actions>
+    <!-- Add your actions here -->
+  </actions>
+
+</idea-plugin>
