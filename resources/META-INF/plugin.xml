@@ -23,7 +23,9 @@
   <depends>com.intellij.modules.platform</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <!-- Add your extensions here -->
+    <toolWindow id="BookShelf" anchor="left" 
+        factoryClass="com.lv.tool.privatereader.ui.BookShelfWindowFactory"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.persistence.BookStorage"/>
   </extensions>
 
   <actions>
