@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 通用小说解析器，用于解析本地txt文件
  */
-public final class CommonNovelParser implements NovelParser {
+public final class CommonNovelParser implements com.lv.tool.privatereader.parser.NovelParser {
     private final String filePath;
     private String content;
 

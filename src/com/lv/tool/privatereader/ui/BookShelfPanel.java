@@ -9,24 +9,33 @@ import com.intellij.ui.components.JBScrollPane;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.persistence.BookStorage;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.WeakHashMap;
 
 /**
  * 书架面板
  */
 public final class BookShelfPanel extends JPanel {
+    private static final WeakHashMap<Project, BookShelfPanel> INSTANCES = new WeakHashMap<>();
+
     private final Project project;
     private final JBList<Book> bookList;
     private final DefaultListModel<Book> listModel;
     private final BookStorage bookStorage;
+
+    public static @Nullable BookShelfPanel getInstance(@NotNull Project project) {
+        return INSTANCES.get(project);
+    }
 
     public BookShelfPanel(@NotNull Project project) {
         this.project = project;
         this.bookStorage = project.getService(BookStorage.class);
         this.listModel = new DefaultListModel<>();
         this.bookList = new JBList<>(listModel);
+        INSTANCES.put(project, this);
 
         setupUI();
         loadBooks();

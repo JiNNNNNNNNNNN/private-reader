@@ -1,14 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <idea-plugin>
   <id>com.lv.tool.private-reader</id>
-  <name>private reader</name>
-  <version>1.0</version>
-  <vendor email="lvjinzhou666@163.com" >J1N-</vendor>
+  <name>Private Reader</name>
+  <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
 
-  <description>
-    私人书库
-    "private reader"是一款小说阅读插件
-    旨在帮助书友在工作闲暇之余,感受文字的魅力
-  </description>
+  <description><![CDATA[
+    私人阅读器，支持多个小说网站的内容抓取和本地阅读。<br>
+    <em>目前支持：起点中文网、纵横中文网</em>
+  ]]></description>
 
   <change-notes>
     v1.0.0 楔子 倚靠在座椅靠背，刚刚完成提交上来的新需求，心里不禁泛起一阵欣喜与空虚。大脑渐渐从极速运转的状态中抽离出来,昨晚看的那一章精彩片段缓缓在脑海浮现……
@@ -16,20 +15,57 @@
   </change-notes>
 
   <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
-  <idea-version since-build="173.0"/>
+  <idea-version since-build="233.0"/>
 
   <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
        on how to target different products -->
   <depends>com.intellij.modules.platform</depends>
+  <depends>com.intellij.modules.lang</depends>
+  <depends>com.intellij.modules.java</depends>
 
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="BookShelf" anchor="left" 
         factoryClass="com.lv.tool.privatereader.ui.BookShelfWindowFactory"/>
+    <toolWindow id="BookReader" anchor="right" secondary="true"
+        factoryClass="com.lv.tool.privatereader.ui.ReaderWindowFactory"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.persistence.BookStorage"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.cache.ChapterCacheManager"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.settings.CacheSettings"/>
+    <applicationConfigurable
+            parentId="tools"
+            instance="com.lv.tool.privatereader.settings.CacheConfigurable"
+            id="com.lv.tool.privatereader.settings.CacheConfigurable"
+            displayName="Private Reader Cache Settings"/>
   </extensions>
 
   <actions>
-    <!-- Add your actions here -->
+    <!-- 定义 Private Reader 菜单组 -->
+    <group id="PrivateReader.MainMenu" text="Private Reader" description="Private Reader plugin menu" popup="true">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+      
+      <!-- 书架管理子菜单 -->
+      <action id="PrivateReader.AddBook" 
+              class="com.lv.tool.privatereader.actions.AddBookAction" 
+              text="添加书籍" 
+              description="添加新书籍到书架"/>
+      <action id="PrivateReader.RemoveBook" 
+              class="com.lv.tool.privatereader.actions.RemoveBookAction" 
+              text="移除书籍" 
+              description="从书架移除选中的书籍"/>
+      <action id="PrivateReader.OpenBook" 
+              class="com.lv.tool.privatereader.actions.OpenBookAction" 
+              text="打开书籍" 
+              description="打开选中的书籍"/>
+
+      <!-- 添加分隔符 -->
+      <separator/>
+
+      <!-- 设置菜单项 -->
+      <action id="PrivateReader.Settings"
+              class="com.intellij.openapi.options.ShowSettingsUtilImpl"
+              text="缓存设置"
+              description="打开缓存设置"/>
+    </group>
   </actions>
 
 </idea-plugin>
