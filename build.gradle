@@ -1,0 +1,48 @@
+plugins {
+    id 'java'
+    id 'org.jetbrains.intellij' version '1.17.1'
+}
+
+group 'com.lv.tool'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { 
+        url 'https://maven.aliyun.com/repository/public' 
+        allowInsecureProtocol = true
+    }
+    maven {
+        url = uri("https://cache-redirector.jetbrains.com/intellij-repository/releases")
+    }
+    maven {
+        url = uri("https://cache-redirector.jetbrains.com/intellij-repository/snapshots")
+    }
+}
+
+dependencies {
+    implementation 'org.jsoup:jsoup:1.15.3'
+}
+
+intellij {
+    version = '243.24978.46'
+    type = 'IC'
+    updateSinceUntilBuild = false
+    instrumentCode = false
+    sameSinceUntilBuild = false
+}
+
+patchPluginXml {
+    sinceBuild = '241'
+    untilBuild = '251.*'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+wrapper {
+    gradleVersion = '8.5'
+    distributionType = Wrapper.DistributionType.BIN
+} 

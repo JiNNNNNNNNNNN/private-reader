@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<idea-plugin>
+  <id>com.lv.tool.private-reader</id>
+  <name>Private Reader</name>
+  <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+
+  <description><![CDATA[
+    <h2>私人阅读器</h2>
+    <p>一个轻量级的小说阅读插件，支持多个小说网站的内容抓取和本地阅读。</p>
+    
+    <h3>主要功能：</h3>
+    <ul>
+      <li>支持多个小说网站内容抓取</li>
+      <li>本地阅读进度保存</li>
+      <li>章节内容缓存</li>
+      <li>优雅的阅读界面</li>
+      <li>快捷键支持</li>
+    </ul>
+    
+    <h3>支持的网站：</h3>
+    <ul>
+      <li>起点中文网</li>
+      <li>纵横中文网</li>
+      <li>本地 txt 文件</li>
+    </ul>
+    
+    <h3>使用方法：</h3>
+    <ol>
+      <li>在 Tools 菜单中找到 "Private Reader" 相关选项</li>
+      <li>点击 "添加书籍" 添加新书</li>
+      <li>在右侧工具窗口中打开书籍开始阅读</li>
+    </ol>
+  ]]></description>
+
+  <change-notes><![CDATA[
+    <h3>v1.0.0</h3>
+    <ul>
+      <li>基础功能实现：
+        <ul>
+          <li>支持添加、移除书籍</li>
+          <li>支持阅读进度保存</li>
+          <li>支持章节内容缓存</li>
+          <li>支持本地 txt 文件解析</li>
+        </ul>
+      </li>
+      <li>UI 优化：
+        <ul>
+          <li>优雅的阅读界面</li>
+          <li>合理的菜单布局</li>
+          <li>快捷键支持</li>
+        </ul>
+      </li>
+      <li>网站支持：
+        <ul>
+          <li>起点中文网</li>
+          <li>纵横中文网</li>
+        </ul>
+      </li>
+    </ul>
+  ]]></change-notes>
+
+  <idea-version since-build="241.0"/>
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="PrivateReader" anchor="right" 
+        factoryClass="com.lv.tool.privatereader.ui.PrivateReaderWindowFactory"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.storage.BookStorage"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheManager"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.ui.settings.CacheSettings"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
+    <applicationConfigurable
+            parentId="tools"
+            instance="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
+            id="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
+            displayName="Private Reader Cache Settings"/>
+            
+    <!-- 日志配置 -->
+    <applicationService serviceImplementation="com.intellij.openapi.diagnostic.Logger"/>
+    <log.logger name="#com.lv.tool.privatereader" level="DEBUG"/>
+  </extensions>
+
+  <actions>
+    <group id="PrivateReader.Group" 
+           text="Private Reader" 
+           description="Private Reader plugin menu"
+           popup="true">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+      
+      <action id="PrivateReader.AddBook" 
+              class="com.lv.tool.privatereader.ui.actions.AddBookAction" 
+              text="添加书籍" 
+              description="添加新书籍到书架"
+              icon="AllIcons.General.Add"/>
+              
+      <action id="PrivateReader.RemoveBook" 
+              class="com.lv.tool.privatereader.ui.actions.RemoveBookAction" 
+              text="移除书籍" 
+              description="从书架移除选中的书籍"
+              icon="AllIcons.General.Remove"/>
+              
+      <action id="PrivateReader.OpenBook" 
+              class="com.lv.tool.privatereader.ui.actions.OpenBookAction" 
+              text="打开书籍" 
+              description="打开选中的书籍"
+              icon="AllIcons.Actions.MenuOpen"/>
+              
+      <separator/>
+      
+      <action id="PrivateReader.ResetProgress" 
+              class="com.lv.tool.privatereader.ui.actions.ResetProgressAction" 
+              text="重置进度" 
+              description="重置选中书籍的阅读进度"
+              icon="AllIcons.Actions.Rollback"/>
+              
+      <separator/>
+      
+      <action id="PrivateReader.Settings"
+              class="com.lv.tool.privatereader.ui.actions.OpenSettingsAction"
+              text="缓存设置"
+              description="打开缓存设置"
+              icon="AllIcons.General.Settings"/>
+    </group>
+  </actions>
+</idea-plugin>
