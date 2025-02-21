@@ -88,35 +88,38 @@ public interface NovelParser {
      * 章节信息
      */
     @Tag("Chapter")
-    public static class Chapter {
-        @Tag private String title;
-        @Tag private String url;
+    class Chapter {
+        private String title = "";
+        private String url = "";
 
         public Chapter() {
-            // 默认构造函数
+            // 默认构造函数，用于序列化
         }
 
         public Chapter(String title, String url) {
-            this.title = title;
-            this.url = url;
+            this.title = title != null ? title : "";
+            this.url = url != null ? url : "";
         }
 
-        @NotNull
         public String title() {
-            return title == null ? "" : title;
+            return title != null ? title : "";
         }
 
-        @NotNull
+        public void setTitle(String title) {
+            this.title = title != null ? title : "";
+        }
+
         public String url() {
-            return url == null ? "" : url;
+            return url != null ? url : "";
         }
 
-        public void setTitle(@NotNull String title) {
-            this.title = title;
+        public void setUrl(String url) {
+            this.url = url != null ? url : "";
         }
 
-        public void setUrl(@NotNull String url) {
-            this.url = url;
+        @Override
+        public String toString() {
+            return title();
         }
 
         @Override
@@ -124,17 +127,12 @@ public interface NovelParser {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             Chapter chapter = (Chapter) o;
-            return Objects.equals(title, chapter.title) && Objects.equals(url, chapter.url);
+            return url().equals(chapter.url());
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(title, url);
-        }
-
-        @Override
-        public String toString() {
-            return title;
+            return url().hashCode();
         }
     }
 } 

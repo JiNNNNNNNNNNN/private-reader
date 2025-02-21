@@ -10,18 +10,17 @@
     
     <h3>主要功能：</h3>
     <ul>
-      <li>支持多个小说网站内容抓取</li>
+      <li>支持通用网站内容智能抓取</li>
       <li>本地阅读进度保存</li>
       <li>章节内容缓存</li>
       <li>优雅的阅读界面</li>
       <li>快捷键支持</li>
+      <li>自定义字体和大小</li>
     </ul>
     
-    <h3>支持的网站：</h3>
+    <h3>支持的来源：</h3>
     <ul>
-      <li>起点中文网</li>
-      <li>纵横中文网</li>
-      <li>本地 txt 文件</li>
+      <li>任意小说网站（智能解析）</li>
     </ul>
     
     <h3>使用方法：</h3>
@@ -40,7 +39,7 @@
           <li>支持添加、移除书籍</li>
           <li>支持阅读进度保存</li>
           <li>支持章节内容缓存</li>
-          <li>支持本地 txt 文件解析</li>
+          <li>支持通用网站智能解析</li>
         </ul>
       </li>
       <li>UI 优化：
@@ -48,12 +47,6 @@
           <li>优雅的阅读界面</li>
           <li>合理的菜单布局</li>
           <li>快捷键支持</li>
-        </ul>
-      </li>
-      <li>网站支持：
-        <ul>
-          <li>起点中文网</li>
-          <li>纵横中文网</li>
         </ul>
       </li>
     </ul>
@@ -69,15 +62,26 @@
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheManager"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.ui.settings.CacheSettings"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
+    <applicationService serviceImplementation="com.lv.tool.privatereader.settings.ReaderSettings"/>
+    
     <applicationConfigurable
             parentId="tools"
             instance="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
             id="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
             displayName="Private Reader Cache Settings"/>
             
+    <applicationConfigurable
+            parentId="tools"
+            instance="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
+            id="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
+            displayName="Private Reader Font Settings"/>
+            
     <!-- 日志配置 -->
     <applicationService serviceImplementation="com.intellij.openapi.diagnostic.Logger"/>
     <log.logger name="#com.lv.tool.privatereader" level="DEBUG"/>
+    
+    <!-- 通知组配置 -->
+    <notificationGroup id="Private Reader" displayType="NONE" isLogByDefault="true"/>
   </extensions>
 
   <actions>
@@ -93,33 +97,41 @@
               description="添加新书籍到书架"
               icon="AllIcons.General.Add"/>
               
-      <action id="PrivateReader.RemoveBook" 
-              class="com.lv.tool.privatereader.ui.actions.RemoveBookAction" 
-              text="移除书籍" 
-              description="从书架移除选中的书籍"
-              icon="AllIcons.General.Remove"/>
+      <action id="PrivateReader.ShowBookshelf"
+              class="com.lv.tool.privatereader.ui.actions.ShowBookshelfAction"
+              text="书架"
+              description="显示书架窗口"
+              icon="AllIcons.Actions.Show"/>
               
-      <action id="PrivateReader.OpenBook" 
-              class="com.lv.tool.privatereader.ui.actions.OpenBookAction" 
-              text="打开书籍" 
-              description="打开选中的书籍"
-              icon="AllIcons.Actions.MenuOpen"/>
+      <action id="PrivateReader.ShowChapterList"
+              class="com.lv.tool.privatereader.ui.actions.ShowChapterListAction"
+              text="章节列表"
+              description="显示当前书籍的章节列表"
+              icon="AllIcons.Actions.ListFiles"/>
               
-      <separator/>
-      
-      <action id="PrivateReader.ResetProgress" 
-              class="com.lv.tool.privatereader.ui.actions.ResetProgressAction" 
-              text="重置进度" 
-              description="重置选中书籍的阅读进度"
-              icon="AllIcons.Actions.Rollback"/>
+      <action id="PrivateReader.FontSettings"
+              class="com.lv.tool.privatereader.ui.actions.OpenFontSettingsAction"
+              text="字体设置"
+              description="打开字体设置"
+              icon="AllIcons.Actions.Preview"/>
               
-      <separator/>
-      
-      <action id="PrivateReader.Settings"
-              class="com.lv.tool.privatereader.ui.actions.OpenSettingsAction"
+      <action id="PrivateReader.CacheSettings"
+              class="com.lv.tool.privatereader.ui.actions.OpenCacheSettingsAction"
               text="缓存设置"
               description="打开缓存设置"
-              icon="AllIcons.General.Settings"/>
+              icon="AllIcons.General.GearPlain"/>
+              
+      <action id="PrivateReader.About"
+              class="com.lv.tool.privatereader.ui.actions.AboutAction"
+              text="关于"
+              description="显示插件信息"
+              icon="AllIcons.Actions.Help"/>
+              
+      <action id="PrivateReader.Feedback"
+              class="com.lv.tool.privatereader.ui.actions.FeedbackAction"
+              text="反馈"
+              description="提交问题反馈"
+              icon="AllIcons.General.Web"/>
     </group>
   </actions>
 </idea-plugin>

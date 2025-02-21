@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.stream.Stream;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 章节缓存管理器
@@ -44,7 +45,7 @@ public final class ChapterCacheManager {
 
         try {
             // 检查缓存是否过期
-            if (isCacheExpired(cachePath)) {
+            if (isExpired(bookId, chapterId)) {
                 Files.delete(cachePath);
                 return null;
             }
@@ -109,12 +110,19 @@ public final class ChapterCacheManager {
         return getCacheSettings().isEnableCache();
     }
 
-    private boolean isCacheExpired(Path cachePath) {
+    private boolean isExpired(String bookId, String chapterId) {
+        Path cachePath = getCachePath(bookId, chapterId);
+        if (!Files.exists(cachePath)) return true;
+        
         try {
-            Instant lastModified = Instant.ofEpochMilli(Files.getLastModifiedTime(cachePath).toMillis());
-            Instant now = Instant.now();
-            int expirationDays = getCacheSettings().getCacheExpiration();
-            return ChronoUnit.DAYS.between(lastModified, now) > expirationDays;
+            // 获取文件最后修改时间
+            long lastModified = Files.getLastModifiedTime(cachePath).toMillis();
+            // 获取缓存过期时间设置
+            int expirationDays = getCacheSettings().getMaxCacheAge();
+            // 计算过期时间
+            long expirationTime = lastModified + TimeUnit.DAYS.toMillis(expirationDays);
+            
+            return System.currentTimeMillis() > expirationTime;
         } catch (IOException e) {
             return true;
         }

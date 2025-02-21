@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.ui;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
@@ -13,6 +14,13 @@ import com.lv.tool.privatereader.parser.NovelParser;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.ui.dialog.AddBookDialog;
 import com.lv.tool.privatereader.parser.ParserFactory;
+import com.lv.tool.privatereader.settings.ReaderSettings;
+import com.lv.tool.privatereader.settings.ReaderSettingsListener;
+import com.intellij.notification.NotificationGroupManager;
+import com.intellij.notification.NotificationType;
+import com.intellij.notification.Notification;
+import javax.swing.plaf.basic.BasicSplitPaneDivider;
+import javax.swing.plaf.basic.BasicSplitPaneUI;
 
 import javax.swing.*;
 import javax.swing.text.*;
@@ -34,6 +42,10 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import javax.swing.text.StyleContext;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
+import com.intellij.icons.AllIcons;
 
 /**
  * 私人阅读器面板
@@ -59,6 +71,10 @@ public class PrivateReaderPanel extends JPanel {
     private JButton prevChapterBtn;
     private JButton nextChapterBtn;
     private String currentChapterId;
+    private static final String NOTIFICATION_GROUP_ID = "Private Reader";
+    private JSplitPane mainSplitPane;
+    private JButton toggleLeftPanelButton;
+    private int lastDividerLocation = 250;
 
     static {
         DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -72,7 +88,15 @@ public class PrivateReaderPanel extends JPanel {
 
         // 设置布局
         setLayout(new BorderLayout());
-        setBorder(JBUI.Borders.empty(5));
+        setBorder(JBUI.Borders.empty(10));
+
+        // 注册设置变更监听
+        ApplicationManager.getApplication()
+            .getMessageBus()
+            .connect()
+            .subscribe(ReaderSettingsListener.TOPIC, () -> {
+                SwingUtilities.invokeLater(this::applyFontSettings);
+            });
 
         // 创建工具栏
         JPanel toolBar = createToolBar();
@@ -81,7 +105,10 @@ public class PrivateReaderPanel extends JPanel {
         // 创建导航按钮
         prevChapterBtn = new JButton("上一章");
         nextChapterBtn = new JButton("下一章");
-        JPanel navigationPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        prevChapterBtn.setFocusPainted(false);
+        nextChapterBtn.setFocusPainted(false);
+        JPanel navigationPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 5));
+        navigationPanel.setBorder(JBUI.Borders.empty(5));
         navigationPanel.add(prevChapterBtn);
         navigationPanel.add(nextChapterBtn);
         
@@ -95,59 +122,132 @@ public class PrivateReaderPanel extends JPanel {
         // 创建书籍列表
         bookList = new JBList<>();
         bookList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        bookList.setBorder(JBUI.Borders.empty(5));
+        bookList.setBackground(UIManager.getColor("Tree.background"));
         bookList.addListSelectionListener(e -> {
             updateProgressInfo();
             updateChapterList();
         });
         JBScrollPane bookScrollPane = new JBScrollPane(bookList);
-        bookScrollPane.setPreferredSize(new Dimension(200, -1));
+        bookScrollPane.setBorder(JBUI.Borders.customLine(UIManager.getColor("Separator.foreground"), 0, 0, 0, 0));
 
         // 创建章节列表
         chapterList = new JBList<>();
         chapterList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        chapterList.setBorder(JBUI.Borders.empty(5));
+        chapterList.setBackground(UIManager.getColor("Tree.background"));
         chapterList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 NovelParser.Chapter selectedChapter = chapterList.getSelectedValue();
                 if (selectedChapter != null) {
-                    LOG.info(String.format("选中章节 - 标题: %s, URL: %s, 索引: %d/%d", 
-                        selectedChapter.title(),
-                        selectedChapter.url(),
-                        chapterList.getSelectedIndex() + 1,
-                        chapterList.getModel().getSize()));
                     loadChapter(selectedChapter);
                 }
             }
         });
         JBScrollPane chapterScrollPane = new JBScrollPane(chapterList);
-        chapterScrollPane.setPreferredSize(new Dimension(200, -1));
+        chapterScrollPane.setBorder(JBUI.Borders.customLine(UIManager.getColor("Separator.foreground"), 1, 0, 0, 0));
 
         // 创建进度信息面板
-        JPanel progressPanel = new JPanel(new GridLayout(2, 1));
+        JPanel progressPanel = new JPanel(new GridLayout(2, 1, 0, 2));
         progressLabel = new JBLabel();
         lastReadLabel = new JBLabel();
         progressPanel.add(progressLabel);
         progressPanel.add(lastReadLabel);
-        progressPanel.setBorder(JBUI.Borders.empty(5));
+        progressPanel.setBorder(JBUI.Borders.empty(10));
+        progressPanel.setBackground(UIManager.getColor("Tree.background"));
 
         // 创建内容区域
         contentArea = new JTextPane();
         contentArea.setEditable(false);
+        contentArea.setBorder(JBUI.Borders.empty(20));
+        contentArea.setBackground(UIManager.getColor("Tree.background"));
+        applyFontSettings();
         JBScrollPane contentScrollPane = new JBScrollPane(contentArea);
+        contentScrollPane.setBorder(JBUI.Borders.empty());
+        contentScrollPane.setBackground(UIManager.getColor("Tree.background"));
 
         // 创建右侧面板
         JPanel rightPanel = new JPanel(new BorderLayout());
         rightPanel.add(progressPanel, BorderLayout.NORTH);
         rightPanel.add(contentScrollPane, BorderLayout.CENTER);
+        rightPanel.setBackground(UIManager.getColor("Tree.background"));
 
         // 创建左侧面板（包含书籍列表和章节列表）
         JSplitPane leftSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
                 bookScrollPane, chapterScrollPane);
         leftSplitPane.setDividerLocation(200);
+        leftSplitPane.setBorder(null);
+        leftSplitPane.setBackground(UIManager.getColor("Tree.background"));
+        leftSplitPane.setDividerSize(1);
+        leftSplitPane.setContinuousLayout(true);
 
         // 添加分隔面板
-        JSplitPane mainSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+        mainSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
                 leftSplitPane, rightPanel);
-        mainSplitPane.setDividerLocation(200);
+        mainSplitPane.setResizeWeight(0.3);
+        mainSplitPane.setContinuousLayout(true);
+        mainSplitPane.setBorder(null);
+        mainSplitPane.setBackground(UIManager.getColor("Tree.background"));
+        mainSplitPane.setOneTouchExpandable(false);
+        mainSplitPane.setDividerSize(1);
+
+        // 在组件显示后设置初始分隔位置
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                int width = getWidth();
+                if (width > 0) {
+                    int dividerLocation = (int)(width * 0.3);
+                    mainSplitPane.setDividerLocation(dividerLocation);
+                    lastDividerLocation = dividerLocation;
+                }
+            }
+        });
+        
+        // 设置最小尺寸
+        leftSplitPane.setMinimumSize(new Dimension(0, 0));
+        rightPanel.setMinimumSize(new Dimension(0, 0));
+        
+        // 设置左侧面板的首选大小
+        leftSplitPane.setPreferredSize(new Dimension(250, 0));
+        
+        // 自定义分隔线UI
+        mainSplitPane.setUI(new BasicSplitPaneUI() {
+            @Override
+            public BasicSplitPaneDivider createDefaultDivider() {
+                return new BasicSplitPaneDivider(this) {
+                    @Override
+                    public int getDividerSize() {
+                        return 1;
+                    }
+
+                    @Override
+                    public void paint(Graphics g) {
+                        g.setColor(UIManager.getColor("Separator.foreground"));
+                        g.fillRect(0, 0, getWidth(), getHeight());
+                    }
+                };
+            }
+        });
+
+        leftSplitPane.setUI(new BasicSplitPaneUI() {
+            @Override
+            public BasicSplitPaneDivider createDefaultDivider() {
+                return new BasicSplitPaneDivider(this) {
+                    @Override
+                    public int getDividerSize() {
+                        return 1;
+                    }
+
+                    @Override
+                    public void paint(Graphics g) {
+                        g.setColor(UIManager.getColor("Separator.foreground"));
+                        g.fillRect(0, 0, getWidth(), getHeight());
+                    }
+                };
+            }
+        });
+        
         add(mainSplitPane, BorderLayout.CENTER);
 
         // 添加键盘快捷键
@@ -156,6 +256,18 @@ public class PrivateReaderPanel extends JPanel {
         // 初始化数据
         refresh();
         setupBookSelectionListener();
+
+        // 添加分隔线位置监听器
+        mainSplitPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, evt -> {
+            int location = mainSplitPane.getDividerLocation();
+            if (location <= 1) {
+                toggleLeftPanelButton.setIcon(AllIcons.Actions.MoveToRightBottom);
+                toggleLeftPanelButton.setToolTipText("显示侧栏");
+            } else {
+                toggleLeftPanelButton.setIcon(AllIcons.Actions.MoveToLeftBottom);
+                toggleLeftPanelButton.setToolTipText("隐藏侧栏");
+            }
+        });
     }
 
     public static PrivateReaderPanel getInstance(Project project) {
@@ -211,17 +323,8 @@ public class PrivateReaderPanel extends JPanel {
         contentArea.setText(content);
         contentArea.setCaretPosition(0);
         
-        // 设置字体和样式
-        contentArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 16));
-        
-        // 设置行距和段落属性
-        StyledDocument doc = contentArea.getStyledDocument();
-        MutableAttributeSet attrs = new SimpleAttributeSet();
-        StyleConstants.setLineSpacing(attrs, 0.3f);
-        doc.setParagraphAttributes(0, doc.getLength(), attrs, true);
-        
-        // 设置边距
-        contentArea.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        // 应用字体设置
+        applyFontSettings();
     }
 
     public void updateReadingProgress(String chapterId, String chapterTitle, int position) {
@@ -304,17 +407,28 @@ public class PrivateReaderPanel extends JPanel {
      * 包含添加书籍、移除书籍、重置进度等功能按钮
      */
     private JPanel createToolBar() {
-        JPanel toolBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel toolBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        toolBar.setBorder(JBUI.Borders.empty(0, 0, 10, 0));
+        toolBar.setBackground(UIManager.getColor("Tree.background"));
+        
+        // 隐藏/显示左侧面板按钮
+        toggleLeftPanelButton = new JButton(AllIcons.Actions.ArrowCollapse);
+        styleIconButton(toggleLeftPanelButton, "隐藏侧栏");
+        toggleLeftPanelButton.addActionListener(e -> toggleLeftPanel());
+        toolBar.add(toggleLeftPanelButton);
         
         // 添加书籍按钮
-        JButton addButton = new JButton("添加书籍");
+        JButton addButton = new JButton(AllIcons.General.Add);
+        styleIconButton(addButton, "添加书籍");
         addButton.addActionListener(e -> {
             AddBookDialog dialog = new AddBookDialog(project);
             dialog.show();
         });
+        toolBar.add(addButton);
         
         // 移除书籍按钮
-        JButton removeButton = new JButton("移除书籍");
+        JButton removeButton = new JButton(AllIcons.General.Remove);
+        styleIconButton(removeButton, "移除书籍");
         removeButton.addActionListener(e -> {
             Book selectedBook = bookList.getSelectedValue();
             if (selectedBook != null) {
@@ -332,9 +446,11 @@ public class PrivateReaderPanel extends JPanel {
                 }
             }
         });
+        toolBar.add(removeButton);
         
         // 重置进度按钮
-        JButton resetButton = new JButton("重置进度");
+        JButton resetButton = new JButton(AllIcons.Actions.Rollback);
+        styleIconButton(resetButton, "重置进度");
         resetButton.addActionListener(e -> {
             Book selectedBook = bookList.getSelectedValue();
             if (selectedBook != null) {
@@ -351,9 +467,11 @@ public class PrivateReaderPanel extends JPanel {
                 }
             }
         });
+        toolBar.add(resetButton);
 
         // 刷新章节列表按钮
-        JButton refreshChaptersButton = new JButton("刷新章节列表");
+        JButton refreshChaptersButton = new JButton(AllIcons.Actions.Refresh);
+        styleIconButton(refreshChaptersButton, "刷新章节列表");
         refreshChaptersButton.addActionListener(e -> {
             Book selectedBook = bookList.getSelectedValue();
             if (selectedBook != null) {
@@ -385,13 +503,32 @@ public class PrivateReaderPanel extends JPanel {
                 }
             }
         });
-        
-        toolBar.add(addButton);
-        toolBar.add(removeButton);
-        toolBar.add(resetButton);
         toolBar.add(refreshChaptersButton);
         
         return toolBar;
+    }
+
+    private void styleIconButton(JButton button, String tooltip) {
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(false);
+        button.setToolTipText(tooltip);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setPreferredSize(new Dimension(28, 28));
+        
+        // 添加鼠标悬停效果
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                button.setContentAreaFilled(true);
+                button.setBackground(UIManager.getColor("Button.hoverBackground"));
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                button.setContentAreaFilled(false);
+            }
+        });
     }
 
     private void setupBookSelectionListener() {
@@ -442,46 +579,60 @@ public class PrivateReaderPanel extends JPanel {
     private void updateChapterList() {
         Book selectedBook = bookList.getSelectedValue();
         if (selectedBook != null) {
-            LOG.debug("更新章节列表: " + selectedBook.getTitle());
+            String message = String.format("更新章节列表 - 书籍: %s", selectedBook.getTitle());
+            LOG.info(message);
+            showNotification(message, NotificationType.INFORMATION);
+            
             try {
                 selectedBook.setProject(project);
                 NovelParser parser = selectedBook.getParser();
                 if (parser != null) {
                     List<NovelParser.Chapter> chapters = selectedBook.getCachedChapters();
                     
-                    if (chapters == null) {
-                        LOG.debug("章节缓存不存在，获取章节列表");
+                    if (chapters == null || chapters.isEmpty()) {
+                        LOG.info("章节缓存不存在或为空，开始获取章节列表");
                         chapters = parser.getChapterList(selectedBook);
+                        // 过滤掉无效的章节
+                        chapters = chapters.stream()
+                            .filter(chapter -> chapter != null && !chapter.url().isEmpty())
+                            .toList();
                         selectedBook.setCachedChapters(chapters);
                         // 更新存储
                         project.getService(BookStorage.class).updateBook(selectedBook);
-                        LOG.info(String.format("缓存章节列表 - 书籍: %s, 章节数: %d", 
-                            selectedBook.getTitle(), chapters.size()));
+                        message = String.format("成功获取章节列表 - 章节数: %d", chapters.size());
+                        LOG.info(message);
+                        showNotification(message, NotificationType.INFORMATION);
                     } else {
-                        LOG.debug("使用缓存的章节列表");
+                        message = String.format("使用缓存的章节列表 - 章节数: %d", chapters.size());
+                        LOG.info(message);
+                        showNotification(message, NotificationType.INFORMATION);
                     }
                     
                     chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
                     
                     // 选中当前阅读的章节
                     String lastChapterId = selectedBook.getLastReadChapterId();
-                    if (lastChapterId != null) {
+                    if (lastChapterId != null && !lastChapterId.isEmpty()) {
                         for (int i = 0; i < chapters.size(); i++) {
-                            if (chapters.get(i).url().equals(lastChapterId)) {
+                            NovelParser.Chapter chapter = chapters.get(i);
+                            if (chapter != null && lastChapterId.equals(chapter.url())) {
                                 chapterList.setSelectedIndex(i);
                                 chapterList.ensureIndexIsVisible(i);
                                 break;
                             }
                         }
                     }
+                } else {
+                    String error = "无法创建解析器，请检查书籍URL是否正确";
+                    LOG.error(error);
+                    showNotification(error, NotificationType.ERROR);
+                    Messages.showErrorDialog(project, error, "错误");
                 }
             } catch (Exception e) {
-                LOG.error("获取章节列表失败: " + e.getMessage(), e);
-                Messages.showErrorDialog(
-                    project,
-                    "获取章节列表失败：" + e.getMessage(),
-                    "错误"
-                );
+                String error = "获取章节列表失败: " + e.getMessage();
+                LOG.error(error, e);
+                showNotification(error, NotificationType.ERROR);
+                Messages.showErrorDialog(project, error, "错误");
             }
         } else {
             chapterList.setListData(new NovelParser.Chapter[0]);
@@ -496,8 +647,11 @@ public class PrivateReaderPanel extends JPanel {
     private void loadChapter(NovelParser.Chapter chapter) {
         Book selectedBook = bookList.getSelectedValue();
         if (selectedBook != null && chapter != null) {
-            LOG.info(String.format("加载章节 - 书籍: %s, 章节: %s", 
-                selectedBook.getTitle(), chapter.title()));
+            String message = String.format("加载章节 - 书籍: %s, 章节: %s", 
+                selectedBook.getTitle(), chapter.title());
+            LOG.info(message);
+            showNotification(message, NotificationType.INFORMATION);
+            
             try {
                 selectedBook.setProject(project);
                 NovelParser parser = selectedBook.getParser();
@@ -508,24 +662,80 @@ public class PrivateReaderPanel extends JPanel {
                 }
                 
                 if (parser == null) {
-                    throw new IllegalStateException("无法创建解析器");
+                    String error = "无法创建解析器";
+                    showNotification(error, NotificationType.ERROR);
+                    throw new IllegalStateException(error);
                 }
                 
                 String content = parser.getChapterContent(chapter.url(), selectedBook);
                 if (content == null || content.isEmpty()) {
-                    throw new IllegalStateException("获取到的章节内容为空");
+                    String error = "获取到的章节内容为空";
+                    showNotification(error, NotificationType.ERROR);
+                    throw new IllegalStateException(error);
                 }
                 
                 setContent(content);
                 currentChapterId = chapter.url();
-                // 更新当前章节索引
+                
+                // 更新当前章节索引和总章节数
                 int currentIndex = chapterList.getSelectedIndex();
+                selectedBook.setCurrentChapterIndex(currentIndex + 1); // 设置为1-based索引
+                selectedBook.setTotalChapters(chapterList.getModel().getSize());
+                
+                // 更新阅读进度
                 progressManager.updateCurrentChapter(selectedBook, currentIndex);
                 updateReadingProgress(currentChapterId, chapter.title(), 0);
+                
+                // 更新存储
+                project.getService(BookStorage.class).updateBook(selectedBook);
                 
                 // 更新导航按钮状态
                 prevChapterBtn.setEnabled(currentIndex > 0);
                 nextChapterBtn.setEnabled(currentIndex < chapterList.getModel().getSize() - 1);
+                
+                // 更新进度显示
+                updateProgressInfo();
+            } catch (Exception e) {
+                String error = "加载章节失败: " + e.getMessage();
+                LOG.error(error, e);
+                showNotification(error, NotificationType.ERROR);
+                Messages.showErrorDialog(
+                    project,
+                    error,
+                    "错误"
+                );
+            }
+        } else {
+            if (selectedBook == null) {
+                LOG.error("未选择书籍");
+                showNotification("未选择书籍", NotificationType.ERROR);
+            }
+            if (chapter == null) {
+                LOG.error("章节为空");
+                showNotification("章节为空", NotificationType.ERROR);
+            }
+        }
+    }
+
+    public void loadChapter(NovelParser.Chapter chapter, int chapterIndex) {
+        if (chapter != null) {
+            try {
+                Book selectedBook = bookList.getSelectedValue();
+                if (selectedBook != null) {
+                    selectedBook.setProject(project);
+                    NovelParser parser = selectedBook.getParser();
+                    String content = parser.getChapterContent(chapter.url(), selectedBook);
+                    setContent(content);
+                    currentChapterId = chapter.url();
+                    
+                    // 更新阅读进度
+                    progressManager.updateCurrentChapter(selectedBook, chapterIndex);
+                    updateReadingProgress(currentChapterId, chapter.title(), 0);
+                    
+                    // 更新导航按钮状态
+                    prevChapterBtn.setEnabled(chapterIndex > 0);
+                    nextChapterBtn.setEnabled(chapterIndex < selectedBook.getTotalChapters() - 1);
+                }
             } catch (Exception e) {
                 LOG.error("加载章节失败: " + e.getMessage(), e);
                 Messages.showErrorDialog(
@@ -534,13 +744,98 @@ public class PrivateReaderPanel extends JPanel {
                     "错误"
                 );
             }
-        } else {
-            if (selectedBook == null) {
-                LOG.error("未选择书籍");
-            }
-            if (chapter == null) {
-                LOG.error("章节为空");
+        }
+    }
+
+    private void showNotification(String content, NotificationType type) {
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup(NOTIFICATION_GROUP_ID)
+            .createNotification(content, type)
+            .notify(project);
+    }
+
+    private void applyFontSettings() {
+        ReaderSettings settings = ApplicationManager.getApplication().getService(ReaderSettings.class);
+        
+        // 创建字体样式
+        Style style = contentArea.addStyle("customStyle", null);
+        StyleConstants.setFontFamily(style, settings.getFontFamily());
+        StyleConstants.setFontSize(style, settings.getFontSize());
+        StyleConstants.setBold(style, settings.isBold());
+        StyleConstants.setForeground(style, settings.getTextColor());
+        
+        // 应用样式到所有文本
+        StyledDocument doc = contentArea.getStyledDocument();
+        doc.setCharacterAttributes(0, doc.getLength(), style, true);
+        
+        // 设置默认样式
+        contentArea.setCharacterAttributes(style, true);
+        
+        // 更新段落属性
+        MutableAttributeSet paragraphAttrs = new SimpleAttributeSet();
+        StyleConstants.setLineSpacing(paragraphAttrs, 0.5f);  // 增加行距
+        StyleConstants.setSpaceAbove(paragraphAttrs, 10.0f);  // 段落上间距
+        StyleConstants.setSpaceBelow(paragraphAttrs, 10.0f);  // 段落下间距
+        doc.setParagraphAttributes(0, doc.getLength(), paragraphAttrs, true);
+        
+        showNotification("字体设置已更新", NotificationType.INFORMATION);
+    }
+
+    public void refreshContent() {
+        refresh();
+        applyFontSettings();
+    }
+
+    public void refreshChapterList() {
+        Book selectedBook = bookList.getSelectedValue();
+        if (selectedBook != null) {
+            LOG.info("手动刷新章节列表: " + selectedBook.getTitle());
+            try {
+                selectedBook.setProject(project);
+                NovelParser parser = selectedBook.getParser();
+                if (parser != null) {
+                    List<NovelParser.Chapter> chapters = parser.getChapterList(selectedBook);
+                    selectedBook.setCachedChapters(chapters);
+                    // 更新存储
+                    project.getService(BookStorage.class).updateBook(selectedBook);
+                    LOG.info(String.format("更新章节列表成功 - 书籍: %s, 章节数: %d", 
+                        selectedBook.getTitle(), chapters.size()));
+                    updateChapterList();
+                    Messages.showInfoMessage(
+                        project,
+                        String.format("成功刷新章节列表，共 %d 章", chapters.size()),
+                        "刷新成功"
+                    );
+                }
+            } catch (Exception ex) {
+                LOG.error("刷新章节列表失败: " + ex.getMessage(), ex);
+                Messages.showErrorDialog(
+                    project,
+                    "刷新章节列表失败：" + ex.getMessage(),
+                    "错误"
+                );
             }
         }
+    }
+
+    private void toggleLeftPanel() {
+        if (mainSplitPane.getDividerLocation() > 10) {
+            // 保存当前分隔线位置
+            lastDividerLocation = mainSplitPane.getDividerLocation();
+            // 隐藏左侧面板
+            mainSplitPane.setDividerLocation(1);
+            toggleLeftPanelButton.setIcon(AllIcons.Actions.MoveToRightBottom);
+            toggleLeftPanelButton.setToolTipText("显示侧栏");
+        } else {
+            // 恢复之前的分隔线位置
+            mainSplitPane.setDividerLocation(lastDividerLocation > 10 ? lastDividerLocation : 250);
+            toggleLeftPanelButton.setIcon(AllIcons.Actions.MoveToLeftBottom);
+            toggleLeftPanelButton.setToolTipText("隐藏侧栏");
+        }
+        
+        // 重新设置分隔线大小以确保可拖动
+        mainSplitPane.setDividerSize(1);
+        mainSplitPane.revalidate();
+        mainSplitPane.repaint();
     }
 } 

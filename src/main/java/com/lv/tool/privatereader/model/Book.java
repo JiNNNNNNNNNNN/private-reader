@@ -30,6 +30,8 @@ public class Book {
     @Tag private String author;
     /** 书籍来源URL */
     @Tag private String url;
+    /** 创建时间 */
+    @Tag private long createTimeMillis;
     /** 最新章节标题 */
     @Tag private String lastChapter;
     /** 上次阅读的章节标题 */
@@ -59,6 +61,7 @@ public class Book {
         this.currentChapterIndex = 0;
         this.finished = false;
         this.lastReadTimeMillis = System.currentTimeMillis();
+        this.createTimeMillis = System.currentTimeMillis();
     }
 
     public Book(String id, String title, String author, String url) {
@@ -201,6 +204,7 @@ public class Book {
         }
     }
 
+    @Transient
     public Project getProject() {
         return project;
     }
@@ -209,8 +213,9 @@ public class Book {
         this.project = project;
     }
 
+    @Transient
     public NovelParser getParser() {
-        if (parser == null) {
+        if (parser == null && url != null && !url.isEmpty()) {
             parser = ParserFactory.createParser(url);
         }
         return parser;
@@ -226,5 +231,13 @@ public class Book {
 
     public void setLastReadTimeMillis(long lastReadTimeMillis) {
         this.lastReadTimeMillis = lastReadTimeMillis;
+    }
+
+    public long getCreateTimeMillis() {
+        return createTimeMillis;
+    }
+
+    public void setCreateTimeMillis(long createTimeMillis) {
+        this.createTimeMillis = createTimeMillis;
     }
 } 

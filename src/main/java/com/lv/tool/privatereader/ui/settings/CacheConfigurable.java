@@ -7,7 +7,6 @@ import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
-import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
@@ -18,89 +17,66 @@ import java.awt.*;
  * 缓存设置界面
  */
 public class CacheConfigurable implements Configurable {
-    private final Project project;
+    private JPanel mainPanel;
     private JBCheckBox enableCacheCheckBox;
     private JSpinner maxCacheSizeSpinner;
-    private ComboBox<String> cacheExpirationCombo;
-    private boolean isModified = false;
+    private JSpinner maxCacheAgeSpinner;
+    private final CacheSettings settings;
 
-    public CacheConfigurable(Project project) {
-        this.project = project;
+    public CacheConfigurable() {
+        settings = new CacheSettings();
     }
 
     @Nls(capitalization = Nls.Capitalization.Title)
     @Override
     public String getDisplayName() {
-        return "Private Reader Cache";
+        return "Private Reader Cache Settings";
     }
 
     @Override
     public @Nullable JComponent createComponent() {
         enableCacheCheckBox = new JBCheckBox("启用缓存");
-        enableCacheCheckBox.addActionListener(e -> isModified = true);
-
-        SpinnerNumberModel spinnerModel = new SpinnerNumberModel(100, 10, 1000, 10);
-        maxCacheSizeSpinner = new JSpinner(spinnerModel);
-        maxCacheSizeSpinner.addChangeListener(e -> isModified = true);
-
-        String[] expirationOptions = {"1天", "3天", "7天", "15天", "30天"};
-        cacheExpirationCombo = new ComboBox<>(expirationOptions);
-        cacheExpirationCombo.addActionListener(e -> isModified = true);
-
-        JPanel panel = FormBuilder.createFormBuilder()
-            .addComponent(enableCacheCheckBox)
-            .addLabeledComponent(new JBLabel("最大缓存大小 (MB):"), maxCacheSizeSpinner)
-            .addLabeledComponent(new JBLabel("缓存过期时间:"), cacheExpirationCombo)
-            .addComponentFillVertically(new JPanel(), 0)
-            .getPanel();
-
-        panel.setPreferredSize(new Dimension(300, 150));
-        return panel;
+        
+        SpinnerNumberModel sizeModel = new SpinnerNumberModel(100, 10, 1000, 10);
+        maxCacheSizeSpinner = new JSpinner(sizeModel);
+        
+        SpinnerNumberModel ageModel = new SpinnerNumberModel(7, 1, 30, 1);
+        maxCacheAgeSpinner = new JSpinner(ageModel);
+        
+        // 加载当前设置
+        enableCacheCheckBox.setSelected(settings.isEnableCache());
+        maxCacheSizeSpinner.setValue(settings.getMaxCacheSize());
+        maxCacheAgeSpinner.setValue(settings.getMaxCacheAge());
+        
+        // 构建设置面板
+        mainPanel = FormBuilder.createFormBuilder()
+                .addComponent(enableCacheCheckBox)
+                .addLabeledComponent(new JBLabel("最大缓存大小 (MB): "), maxCacheSizeSpinner)
+                .addLabeledComponent(new JBLabel("缓存过期时间 (天): "), maxCacheAgeSpinner)
+                .addComponentFillVertically(new JPanel(), 0)
+                .getPanel();
+        
+        return mainPanel;
     }
 
     @Override
     public boolean isModified() {
-        return isModified;
+        return settings.isEnableCache() != enableCacheCheckBox.isSelected() ||
+               settings.getMaxCacheSize() != (Integer) maxCacheSizeSpinner.getValue() ||
+               settings.getMaxCacheAge() != (Integer) maxCacheAgeSpinner.getValue();
     }
 
     @Override
     public void apply() throws ConfigurationException {
-        CacheSettings settings = project.getService(CacheSettings.class);
         settings.setEnableCache(enableCacheCheckBox.isSelected());
         settings.setMaxCacheSize((Integer) maxCacheSizeSpinner.getValue());
-        settings.setCacheExpiration(getExpirationDays());
-        isModified = false;
+        settings.setMaxCacheAge((Integer) maxCacheAgeSpinner.getValue());
     }
 
     @Override
     public void reset() {
-        CacheSettings settings = project.getService(CacheSettings.class);
         enableCacheCheckBox.setSelected(settings.isEnableCache());
         maxCacheSizeSpinner.setValue(settings.getMaxCacheSize());
-        setExpirationComboBox(settings.getCacheExpiration());
-        isModified = false;
-    }
-
-    private int getExpirationDays() {
-        String selected = (String) cacheExpirationCombo.getSelectedItem();
-        if (selected == null) return 7;
-        return Integer.parseInt(selected.replaceAll("\\D+", ""));
-    }
-
-    private void setExpirationComboBox(int days) {
-        String target = days + "天";
-        for (int i = 0; i < cacheExpirationCombo.getItemCount(); i++) {
-            if (cacheExpirationCombo.getItemAt(i).equals(target)) {
-                cacheExpirationCombo.setSelectedIndex(i);
-                break;
-            }
-        }
-    }
-
-    @Override
-    public void disposeUIResources() {
-        enableCacheCheckBox = null;
-        maxCacheSizeSpinner = null;
-        cacheExpirationCombo = null;
+        maxCacheAgeSpinner.setValue(settings.getMaxCacheAge());
     }
 } 

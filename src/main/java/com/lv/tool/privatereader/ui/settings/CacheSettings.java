@@ -1,65 +1,55 @@
 package com.lv.tool.privatereader.ui.settings;
 
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
-import com.intellij.openapi.project.Project;
+import com.intellij.util.xmlb.XmlSerializerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * 缓存设置
  */
-@Service(Service.Level.PROJECT)
 @State(
     name = "PrivateReaderCacheSettings",
-    storages = @Storage("privateReaderCache.xml")
+    storages = @Storage("private-reader-cache-settings.xml")
 )
-public class CacheSettings implements PersistentStateComponent<CacheSettings.State> {
-    private State myState = new State();
-
-    public static CacheSettings getInstance(@NotNull Project project) {
-        return project.getService(CacheSettings.class);
-    }
-
-    public static class State {
-        public boolean enableCache = true;
-        public int maxCacheSize = 100; // MB
-        public int cacheExpiration = 7; // days
-    }
-
-    @Override
-    public @Nullable State getState() {
-        return myState;
-    }
-
-    @Override
-    public void loadState(@NotNull State state) {
-        myState = state;
-    }
+public class CacheSettings implements PersistentStateComponent<CacheSettings> {
+    private boolean enableCache = true;
+    private int maxCacheSize = 100; // MB
+    private int maxCacheAge = 7; // days
 
     public boolean isEnableCache() {
-        return myState.enableCache;
+        return enableCache;
     }
 
     public void setEnableCache(boolean enableCache) {
-        myState.enableCache = enableCache;
+        this.enableCache = enableCache;
     }
 
     public int getMaxCacheSize() {
-        return myState.maxCacheSize;
+        return maxCacheSize;
     }
 
     public void setMaxCacheSize(int maxCacheSize) {
-        myState.maxCacheSize = maxCacheSize;
+        this.maxCacheSize = maxCacheSize;
     }
 
-    public int getCacheExpiration() {
-        return myState.cacheExpiration;
+    public int getMaxCacheAge() {
+        return maxCacheAge;
     }
 
-    public void setCacheExpiration(int cacheExpiration) {
-        myState.cacheExpiration = cacheExpiration;
+    public void setMaxCacheAge(int maxCacheAge) {
+        this.maxCacheAge = maxCacheAge;
+    }
+
+    @Override
+    public @Nullable CacheSettings getState() {
+        return this;
+    }
+
+    @Override
+    public void loadState(@NotNull CacheSettings state) {
+        XmlSerializerUtil.copyBean(state, this);
     }
 } 

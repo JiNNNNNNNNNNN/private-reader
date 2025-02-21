@@ -11,9 +11,14 @@ import org.jetbrains.annotations.Nullable;
 import com.intellij.util.xmlb.annotations.Tag;
 import com.intellij.util.xmlb.annotations.XCollection;
 import com.intellij.openapi.diagnostic.LogLevel;
+import com.intellij.openapi.project.Project;
+import com.intellij.ide.util.PropertiesComponent;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.lang.reflect.Type;
 
 /**
  * 书籍存储服务
@@ -27,7 +32,7 @@ import java.util.List;
  */
 @State(
     name = "PrivateReaderBookStorage",
-    storages = @Storage("privateReader.xml")
+    storages = @Storage("private-reader-books.xml")
 )
 @Tag("BookStorage")
 public class BookStorage implements PersistentStateComponent<BookStorage> {
@@ -39,11 +44,16 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
     
     @Tag("books")
     @XCollection(style = XCollection.Style.v2)
-    private List<Book> books;
+    private List<Book> books = new ArrayList<>();
 
-    public BookStorage() {
-        this.books = new ArrayList<>();
-        LOG.info("初始化 BookStorage");
+    private Project project;
+    private Gson gson;
+    private static final String STORAGE_KEY = "privateReaderBooks";
+
+    public BookStorage(Project project) {
+        this.project = project;
+        this.gson = new Gson();
+        loadBooks();
     }
 
     /**
@@ -106,25 +116,57 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
     public void removeBook(Book book) {
         LOG.info("尝试移除书籍: " + book.getTitle());
         if (books != null) {
-            boolean removed = books.remove(book);
-            if (removed) {
-                LOG.info("成功移除书籍: " + book.getTitle());
-            } else {
-                LOG.warn("未找到要移除的书籍: " + book.getTitle());
-            }
+            books.removeIf(b -> b.getId().equals(book.getId()));
         }
     }
 
     public void updateBook(Book book) {
         LOG.info("尝试更新书籍: " + book.getTitle());
         if (books != null) {
-            int index = books.indexOf(book);
-            if (index != -1) {
-                books.set(index, book);
-                LOG.info("成功更新书籍: " + book.getTitle());
-            } else {
-                LOG.warn("未找到要更新的书籍: " + book.getTitle());
+            for (int i = 0; i < books.size(); i++) {
+                if (books.get(i).getId().equals(book.getId())) {
+                    books.set(i, book);
+                    LOG.info("成功更新书籍: " + book.getTitle());
+                    break;
+                }
             }
+        }
+    }
+
+    /**
+     * 更新所有书籍
+     * @param books 新的书籍列表
+     */
+    public void updateBooks(@NotNull List<Book> books) {
+        this.books.clear();
+        this.books.addAll(books);
+        saveBooks();
+    }
+
+    /**
+     * 保存书籍列表到持久化存储
+     */
+    private void saveBooks() {
+        try {
+            String json = gson.toJson(books);
+            PropertiesComponent.getInstance(project).setValue(STORAGE_KEY, json);
+        } catch (Exception e) {
+            LOG.error("保存书籍列表失败", e);
+        }
+    }
+
+    /**
+     * 从持久化存储加载书籍列表
+     */
+    private void loadBooks() {
+        try {
+            String json = PropertiesComponent.getInstance(project).getValue(STORAGE_KEY);
+            if (json != null && !json.isEmpty()) {
+                Type listType = new TypeToken<ArrayList<Book>>(){}.getType();
+                books = gson.fromJson(json, listType);
+            }
+        } catch (Exception e) {
+            LOG.error("加载书籍列表失败", e);
         }
     }
 } 
