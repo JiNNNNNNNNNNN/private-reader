@@ -5,13 +5,32 @@ package com.lv.tool.privatereader.parser.common;
  * 用于处理小说文本的格式化，包括段落、对话、场景分隔符和标题的处理
  */
 public class TextFormatter {
-    private static final String SCENE_BREAK = "══════════════";
-    private static final String TITLE_BREAK = "══════════════";
+    private static final int MAX_PARAGRAPH_LENGTH = 500;
+    private static final int MIN_PARAGRAPH_LENGTH = 10;
+    
+    private static final String[] PARAGRAPH_INDICATORS = {
+        // 时间转换
+        "一天", "这天", "那天", "某天", "第二天", "翌日", "次日", "当天", "后来", "此后", "从此",
+        // 场景转换
+        "这时", "此时", "这会", "不一会", "片刻", "一会儿", "一阵子", "转眼", "眨眼",
+        // 视角转换
+        "另一边", "与此同时", "同时", "这边", "那边", "远处", "不远处",
+        // 情节转折
+        "然而", "但是", "不过", "可是", "突然", "忽然", "猛然", "蓦地",
+        // 人物动作
+        "只见", "只听", "就见", "就听"
+    };
+
+    private static final String[] DIALOG_MARKERS = {
+        "「", "」", "\u201C", "\u201D", "『", "』", "'", "'", "\"", "'"
+    };
+
+    private static final String[] PUNCTUATION_MARKS = {
+        "，", "。", "！", "？", "；", "：", "、", "…"
+    };
 
     /**
      * 格式化文本内容
-     * @param text 要格式化的文本
-     * @return 格式化后的文本
      */
     public static String format(String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -19,68 +38,149 @@ public class TextFormatter {
         }
         
         text = preprocess(text);
-        return formatParagraphs(text);
+        text = formatParagraphs(text);
+        text = postprocess(text);
+        return text;
     }
 
     /**
-     * 预处理文本，处理换行符、空白字符、场景分隔符和标题
+     * 预处理文本
      */
     private static String preprocess(String text) {
-        // 标准化换行符
-        text = text.replaceAll("\\r\\n|\\r", "\n");
+        // 基础清理
+        text = text.replaceAll("\\r\\n|\\r", "\n")
+                  .replaceAll("[ 　\\t]+", " ")
+                  .trim();
         
-        // 移除多余的空白字符
-        text = text.replaceAll("[ \\t]+", " ").trim();
+        // 标点规范化
+        text = text.replaceAll("…{2,}|\\.\\.\\.", "……")
+                  .replaceAll("!{2,}", "！！")
+                  .replaceAll("\\?{2,}", "？？");
         
-        // 处理场景分隔符，确保场景分隔符独立成段
-        text = text.replaceAll("(?m)^[ \\t]*\\*{3,}[ \\t]*$", 
-            "\n\n" + centerText(SCENE_BREAK) + "\n\n");
+        // 在句末添加空格
+        text = text.replaceAll("([。！？])(?=[^「」『』\\s])", "$1 ");
+        text = text.replaceAll("([。！？])(?=\\n)", "$1 ");
         
-        // 处理标题，确保标题独立成段并美化格式
+        // 处理对话
+        text = text.replaceAll("([。！？][「」『』])(?=[^，。！？])", "$1 ");
+        
+        // 处理标题
         text = text.replaceAll("(?m)^(第[零一二三四五六七八九十百千万]+[章节]\\s*[^\\n]+)$", 
-            "\n\n" + centerText(TITLE_BREAK) + "\n" + centerText("$1") + "\n" + centerText(TITLE_BREAK) + "\n\n");
-        
-        // 确保段落之间有适当的空行
-        text = text.replaceAll("\n{3,}", "\n\n");
+            "\n\n        $1\n\n");
         
         return text;
     }
 
     /**
-     * 格式化段落，处理对话、场景分隔符和标题的排版
+     * 格式化段落
      */
     private static String formatParagraphs(String text) {
-        StringBuilder result = new StringBuilder();
-        String[] paragraphs = text.split("\n\n");
+        // 按基本规则分段
+        String[] rawParagraphs = text.split(
+            "\\n\\s*\\n+" +                     // 空行
+            "|(?<=[。！？])(?=\\s*\\n)" +       // 句末换行
+            "|(?<=[。！？])(?=[^，。！？]*?(" + String.join("|", PARAGRAPH_INDICATORS) + "))" // 指示词
+        );
         
-        for (String paragraph : paragraphs) {
-            paragraph = paragraph.trim();
-            if (paragraph.isEmpty()) {
+        StringBuilder result = new StringBuilder();
+        boolean lastWasDialog = false;
+        
+        for (String para : rawParagraphs) {
+            para = para.trim();
+            if (para.isEmpty()) continue;
+            
+            // 标题处理
+            if (para.matches("^\\s*第[零一二三四五六七八九十百千万]+[章节].*$")) {
+                result.append("\n    ").append(para).append("\n");
+                lastWasDialog = false;
                 continue;
             }
             
-            // 处理对话段落
-            if (paragraph.startsWith("\u201C") || paragraph.startsWith("\u300C")) {
-                result.append("    ").append(paragraph);
+            // 对话段落处理
+            if (containsDialog(para)) {
+                result.append("    ").append(para).append("\n");
+                lastWasDialog = true;
+                continue;
             }
-            // 处理场景分隔符和标题
-            else if (paragraph.contains(SCENE_BREAK) || paragraph.contains(TITLE_BREAK)) {
-                result.append(paragraph);
+            
+            // 长段落智能拆分
+            if (para.length() > MAX_PARAGRAPH_LENGTH) {
+                String[] sentences = para.split("(?<=[。！？])");
+                StringBuilder temp = new StringBuilder();
+                
+                for (String sent : sentences) {
+                    if (temp.length() + sent.length() > MAX_PARAGRAPH_LENGTH) {
+                        if (temp.length() > 0) {
+                            result.append("    ").append(temp).append("\n");
+                            temp = new StringBuilder();
+                        }
+                    }
+                    temp.append(sent);
+                }
+                
+                if (temp.length() > 0) {
+                    result.append("    ").append(temp).append("\n");
+                }
+                lastWasDialog = false;
+                continue;
             }
-            // 普通段落
-            else {
-                result.append("    ").append(paragraph);
+            
+            // 常规段落处理
+            if (startsWithIndicator(para)) {
+                result.append("    ").append(para).append("\n");
+            } else if (lastWasDialog) {
+                result.append("    ").append(para).append("\n");
+            } else {
+                result.append("    ").append(para).append("\n");
             }
-            result.append("\n\n");
+            lastWasDialog = false;
         }
         
         return result.toString().trim();
     }
-    
+
     /**
-     * 文本居中显示
+     * 判断是否包含对话
      */
-    private static String centerText(String text) {
-        return String.format("%n%s%n", text);
+    private static boolean containsDialog(String text) {
+        return text.matches(".*[「『].*[」』].*") || 
+               text.matches(".*[「『][^「『」』]+$") ||  // 未闭合的引号(跨段对话)
+               text.startsWith("「") || text.startsWith("『");
+    }
+
+    /**
+     * 判断是否以段落指示词开头
+     */
+    private static boolean startsWithIndicator(String text) {
+        for (String indicator : PARAGRAPH_INDICATORS) {
+            if (text.startsWith(indicator)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 后处理文本
+     */
+    private static String postprocess(String text) {
+        // 处理标点符号前后的空格，但保留句末空格
+        for (String mark : PUNCTUATION_MARKS) {
+            if (mark.equals("。") || mark.equals("！") || mark.equals("？")) {
+                text = text.replaceAll("\\s*" + mark + "(?!\\s)", mark + " ");
+            } else {
+                text = text.replaceAll("\\s*" + mark + "\\s*", mark);
+            }
+        }
+        
+        // 处理对话标记前后的空格
+        for (String marker : DIALOG_MARKERS) {
+            text = text.replaceAll("\\s*" + marker + "\\s*", marker);
+        }
+        
+        // 处理括号前后的空格
+        text = text.replaceAll("\\s*([（）()《》「」『』]+)\\s*", "$1");
+        
+        return text;
     }
 } 

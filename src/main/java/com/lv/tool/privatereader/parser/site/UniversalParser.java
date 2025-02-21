@@ -6,6 +6,7 @@ import com.lv.tool.privatereader.parser.common.ChapterAnalyzer;
 import com.lv.tool.privatereader.parser.common.TextDensityAnalyzer;
 import com.lv.tool.privatereader.parser.common.MetadataAnalyzer;
 import com.lv.tool.privatereader.parser.common.TextFormatter;
+import com.lv.tool.privatereader.parser.common.ChapterTitleUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -195,11 +196,37 @@ public final class UniversalParser implements NovelParser {
         // 1. URL特征判断
         boolean urlMatch = href.contains("/chapter/") || 
                           href.contains("/read/") ||
-                          href.matches(".*/(\\d+).(html|htm|shtml)$");
+                          href.contains("/book/") ||
+                          href.matches(".*/(\\d+).(html|htm|shtml|aspx|php)$") ||
+                          href.matches(".*/chapter_\\d+.*") ||
+                          href.matches(".*/c\\d+.*") ||
+                          href.matches(".*/\\d+/\\d+.*");
 
         // 2. 标题特征判断
-        boolean titleMatch = CHAPTER_PATTERN.matcher(title).matches() ||
-                           title.contains("第") && title.contains("章");
+        boolean titleMatch = ChapterTitleUtils.isChapterTitle(title);
+
+        // 3. 智能分析
+        if (!urlMatch && !titleMatch) {
+            // 检查URL中的数字序列
+            boolean hasSequentialNumbers = href.matches(".*\\d+.*") &&
+                                        !href.contains("javascript") &&
+                                        !href.contains("login") &&
+                                        !href.contains("register");
+            
+            // 检查标题长度和内容
+            boolean titleLengthValid = title.length() >= 2 && title.length() <= 50;
+            boolean titleHasValidChars = !title.contains("登录") && 
+                                       !title.contains("注册") &&
+                                       !title.contains("首页") &&
+                                       !title.contains("最新") &&
+                                       !title.contains("排行");
+            
+            // 如果URL包含序列数字且标题看起来合理，认为是章节链接
+            if (hasSequentialNumbers && titleLengthValid && titleHasValidChars) {
+                LOG.debug("通过智能分析识别到章节链接 - 标题: " + title);
+                return true;
+            }
+        }
 
         if (urlMatch || titleMatch) {
             LOG.debug("识别到章节链接 - 标题: " + title + ", URL: " + href + 
