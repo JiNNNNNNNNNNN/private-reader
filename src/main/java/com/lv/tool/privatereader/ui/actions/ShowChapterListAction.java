@@ -1,14 +1,14 @@
 package com.lv.tool.privatereader.ui.actions;
 
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 import com.lv.tool.privatereader.ui.dialog.ChapterListDialog;
+import com.lv.tool.privatereader.util.PluginUtil;
 import org.jetbrains.annotations.NotNull;
 
-public class ShowChapterListAction extends AnAction {
+public class ShowChapterListAction extends BaseAction {
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -27,7 +27,7 @@ public class ShowChapterListAction extends AnAction {
     @Override
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
-        if (project != null) {
+        if (project != null && PluginUtil.isPluginEnabled()) {
             PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
             e.getPresentation().setEnabled(panel != null && panel.getBookList().getSelectedValue() != null);
         } else {

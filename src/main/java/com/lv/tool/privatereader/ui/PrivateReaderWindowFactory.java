@@ -4,6 +4,9 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.ui.content.ContentFactory;
+import com.intellij.openapi.application.ApplicationManager;
+import com.lv.tool.privatereader.settings.PluginSettings;
+import com.lv.tool.privatereader.settings.PluginSettingsListener;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -16,6 +19,18 @@ public class PrivateReaderWindowFactory implements ToolWindowFactory {
         toolWindow.getContentManager().addContent(
             ContentFactory.getInstance().createContent(readerPanel, "", false)
         );
+
+        // 监听插件设置变更
+        ApplicationManager.getApplication()
+            .getMessageBus()
+            .connect()
+            .subscribe(PluginSettingsListener.TOPIC, () -> {
+                boolean shouldBeAvailable = shouldBeAvailable(project);
+                toolWindow.setAvailable(shouldBeAvailable);
+                if (shouldBeAvailable) {
+                    readerPanel.refresh();
+                }
+            });
     }
 
     @Override
@@ -26,6 +41,7 @@ public class PrivateReaderWindowFactory implements ToolWindowFactory {
 
     @Override
     public boolean shouldBeAvailable(@NotNull Project project) {
-        return true;
+        PluginSettings settings = ApplicationManager.getApplication().getService(PluginSettings.class);
+        return settings != null && settings.isEnabled();
     }
 } 

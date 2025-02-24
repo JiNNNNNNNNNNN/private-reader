@@ -63,18 +63,32 @@
     <projectService serviceImplementation="com.lv.tool.privatereader.ui.settings.CacheSettings"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.ReaderSettings"/>
+    <applicationService serviceImplementation="com.lv.tool.privatereader.settings.PluginSettings"/>
     
+    <!-- 设置菜单结构 -->
     <applicationConfigurable
             parentId="tools"
-            instance="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
-            id="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
-            displayName="Private Reader Cache Settings"/>
+            instance="com.lv.tool.privatereader.ui.settings.MainConfigurable"
+            id="com.lv.tool.privatereader.ui.settings.MainConfigurable"
+            displayName="Private Reader"/>
             
     <applicationConfigurable
-            parentId="tools"
+            parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
+            instance="com.lv.tool.privatereader.ui.settings.PluginConfigurable"
+            id="com.lv.tool.privatereader.ui.settings.PluginConfigurable"
+            displayName="插件设置"/>
+            
+    <applicationConfigurable
+            parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             instance="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
             id="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
-            displayName="Private Reader Font Settings"/>
+            displayName="字体设置"/>
+            
+    <applicationConfigurable
+            parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
+            instance="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
+            id="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
+            displayName="缓存设置"/>
             
     <!-- 日志配置 -->
     <applicationService serviceImplementation="com.intellij.openapi.diagnostic.Logger"/>
@@ -91,23 +105,33 @@
            popup="true">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
       
-      <action id="PrivateReader.AddBook" 
-              class="com.lv.tool.privatereader.ui.actions.AddBookAction" 
-              text="添加书籍" 
-              description="添加新书籍到书架"
-              icon="AllIcons.General.Add"/>
-              
+      <!-- 核心功能组 -->
       <action id="PrivateReader.ShowBookshelf"
               class="com.lv.tool.privatereader.ui.actions.ShowBookshelfAction"
               text="书架"
               description="显示书架窗口"
               icon="AllIcons.Actions.Show"/>
               
+      <action id="PrivateReader.AddBook" 
+              class="com.lv.tool.privatereader.ui.actions.AddBookAction" 
+              text="添加书籍" 
+              description="添加新书籍到书架"
+              icon="AllIcons.General.Add"/>
+              
       <action id="PrivateReader.ShowChapterList"
               class="com.lv.tool.privatereader.ui.actions.ShowChapterListAction"
               text="章节列表"
               description="显示当前书籍的章节列表"
               icon="AllIcons.Actions.ListFiles"/>
+              
+      <separator/>
+      
+      <!-- 设置组 -->
+      <action id="PrivateReader.PluginSettings"
+              class="com.lv.tool.privatereader.ui.actions.OpenPluginSettingsAction"
+              text="插件设置"
+              description="打开插件设置"
+              icon="AllIcons.General.Settings"/>
               
       <action id="PrivateReader.FontSettings"
               class="com.lv.tool.privatereader.ui.actions.OpenFontSettingsAction"
@@ -121,17 +145,14 @@
               description="打开缓存设置"
               icon="AllIcons.General.GearPlain"/>
               
+      <separator/>
+      
+      <!-- 帮助组 -->
       <action id="PrivateReader.About"
               class="com.lv.tool.privatereader.ui.actions.AboutAction"
               text="关于"
               description="显示插件信息"
               icon="AllIcons.Actions.Help"/>
-              
-      <action id="PrivateReader.Feedback"
-              class="com.lv.tool.privatereader.ui.actions.FeedbackAction"
-              text="反馈"
-              description="提交问题反馈"
-              icon="AllIcons.General.Web"/>
     </group>
   </actions>
 </idea-plugin>

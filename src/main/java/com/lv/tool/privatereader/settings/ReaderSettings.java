@@ -19,8 +19,8 @@ import javax.swing.UIManager;
 public final class ReaderSettings implements PersistentStateComponent<ReaderSettings> {
     private static final String DEFAULT_FONT_FAMILY = "Microsoft YaHei";
     private static final int DEFAULT_FONT_SIZE = 16;
-    private static final Color LIGHT_THEME_COLOR = new Color(43, 43, 43);
-    private static final Color DARK_THEME_COLOR = new Color(187, 187, 187);
+    private static final int LIGHT_THEME_COLOR = -14013910; // RGB: 43, 43, 43
+    private static final int DARK_THEME_COLOR = -4473925;   // RGB: 187, 187, 187
     private static final String EDITOR_FONT_KEY = "Label.font";
     private static final String EDITOR_COLOR_KEY = "Editor.foreground";
     private static final String DARK_THEME_KEY = "ui.is.dark";
@@ -28,7 +28,7 @@ public final class ReaderSettings implements PersistentStateComponent<ReaderSett
     private String fontFamily = getSystemFontFamily();
     private int fontSize = getSystemFontSize();
     private boolean isBold = false;
-    private Integer textColorRGB = null; // 存储用户自定义的颜色
+    private Integer textColorRGB = null;
 
     private static String getSystemFontFamily() {
         Font font = UIManager.getFont(EDITOR_FONT_KEY);
@@ -41,8 +41,7 @@ public final class ReaderSettings implements PersistentStateComponent<ReaderSett
     }
 
     public String getFontFamily() {
-        Font editorFont = UIManager.getFont(EDITOR_FONT_KEY);
-        return editorFont != null ? editorFont.getFamily() : fontFamily;
+        return fontFamily;
     }
 
     public void setFontFamily(String fontFamily) {
@@ -50,8 +49,7 @@ public final class ReaderSettings implements PersistentStateComponent<ReaderSett
     }
 
     public int getFontSize() {
-        Font editorFont = UIManager.getFont(EDITOR_FONT_KEY);
-        return editorFont != null ? editorFont.getSize() : fontSize;
+        return fontSize;
     }
 
     public void setFontSize(int fontSize) {
@@ -66,24 +64,29 @@ public final class ReaderSettings implements PersistentStateComponent<ReaderSett
         isBold = bold;
     }
 
-    public Color getTextColor() {
-        // 如果用户设置了自定义颜色，使用自定义颜色
+    public Integer getTextColorRGB() {
         if (textColorRGB != null) {
-            return new Color(textColorRGB);
+            return textColorRGB;
         }
         
-        // 否则使用 IDE 当前主题的颜色
         Color editorForeground = UIManager.getColor(EDITOR_COLOR_KEY);
         if (editorForeground != null) {
-            return editorForeground;
+            return editorForeground.getRGB();
         }
         
-        // 如果获取不到编辑器颜色，根据当前主题返回默认颜色
         return UIManager.getBoolean(DARK_THEME_KEY) ? DARK_THEME_COLOR : LIGHT_THEME_COLOR;
     }
 
+    public void setTextColorRGB(Integer colorRGB) {
+        this.textColorRGB = colorRGB;
+    }
+
+    public Color getTextColor() {
+        return new Color(getTextColorRGB());
+    }
+
     public void setTextColor(Color color) {
-        this.textColorRGB = color != null ? color.getRGB() : null;
+        setTextColorRGB(color != null ? color.getRGB() : null);
     }
 
     @Override

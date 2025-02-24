@@ -46,6 +46,7 @@ import javax.swing.text.StyleContext;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import com.intellij.icons.AllIcons;
+import com.lv.tool.privatereader.settings.PluginSettings;
 
 /**
  * 私人阅读器面板
@@ -86,6 +87,23 @@ public class PrivateReaderPanel extends JPanel {
         this.progressManager = project.getService(ReadingProgressManager.class);
         instance = this;
 
+        // 初始化必要的组件
+        bookList = new JBList<>();
+        chapterList = new JBList<>();
+        contentArea = new JTextPane();
+        progressLabel = new JBLabel();
+        lastReadLabel = new JBLabel();
+
+        // 检查插件是否启用
+        PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
+        if (!pluginSettings.isEnabled()) {
+            LOG.info("插件已禁用，不初始化阅读器面板");
+            setLayout(new BorderLayout());
+            JLabel disabledLabel = new JLabel("插件已禁用，请在设置中启用插件", SwingConstants.CENTER);
+            add(disabledLabel, BorderLayout.CENTER);
+            return;
+        }
+
         // 设置布局
         setLayout(new BorderLayout());
         setBorder(JBUI.Borders.empty(10));
@@ -120,7 +138,6 @@ public class PrivateReaderPanel extends JPanel {
         nextChapterBtn.addActionListener(e -> navigateChapter(1));
 
         // 创建书籍列表
-        bookList = new JBList<>();
         bookList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         bookList.setBorder(JBUI.Borders.empty(5));
         bookList.setBackground(UIManager.getColor("Tree.background"));
@@ -132,7 +149,6 @@ public class PrivateReaderPanel extends JPanel {
         bookScrollPane.setBorder(JBUI.Borders.customLine(UIManager.getColor("Separator.foreground"), 0, 0, 0, 0));
 
         // 创建章节列表
-        chapterList = new JBList<>();
         chapterList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         chapterList.setBorder(JBUI.Borders.empty(5));
         chapterList.setBackground(UIManager.getColor("Tree.background"));
@@ -149,15 +165,12 @@ public class PrivateReaderPanel extends JPanel {
 
         // 创建进度信息面板
         JPanel progressPanel = new JPanel(new GridLayout(2, 1, 0, 2));
-        progressLabel = new JBLabel();
-        lastReadLabel = new JBLabel();
         progressPanel.add(progressLabel);
         progressPanel.add(lastReadLabel);
         progressPanel.setBorder(JBUI.Borders.empty(10));
         progressPanel.setBackground(UIManager.getColor("Tree.background"));
 
         // 创建内容区域
-        contentArea = new JTextPane();
         contentArea.setEditable(false);
         contentArea.setBorder(JBUI.Borders.empty(20));
         contentArea.setBackground(UIManager.getColor("Tree.background"));
