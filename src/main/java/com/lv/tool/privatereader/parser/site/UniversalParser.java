@@ -74,8 +74,9 @@ public final class UniversalParser implements NovelParser {
         LOG.debug("开始解析章节列表...");
         List<Chapter> chapters = new ArrayList<>();
         Elements links = document.select("a[href]");
-        LOG.debug("找到链接数量: " + links.size());
+        LOG.debug("找到链接数量: " + links.size() + "，正在分析...");
         
+        int processedLinks = 0;
         for (Element link : links) {
             String href = link.attr("abs:href");
             String title = link.text().trim();
@@ -84,25 +85,32 @@ public final class UniversalParser implements NovelParser {
                 chapters.add(new Chapter(title, href));
                 LOG.debug("找到章节: " + title + " -> " + href);
             }
+            
+            processedLinks++;
+            if (processedLinks % 100 == 0) {
+                LOG.info(String.format("已处理 %d/%d 个链接，找到 %d 个章节", 
+                    processedLinks, links.size(), chapters.size()));
+            }
         }
         
         // 如果没有找到章节，尝试查找可能的章节目录页面
         if (chapters.isEmpty()) {
             LOG.info("直接解析未找到章节，尝试查找目录页面...");
             Elements catalogLinks = document.select("a:matches(目录|章节|卷章|分卷|分章)");
-            LOG.debug("找到可能的目录链接数量: " + catalogLinks.size());
+            LOG.debug("找到可能的目录链接数量: " + catalogLinks.size() + "，开始逐个尝试...");
             
             for (Element link : catalogLinks) {
                 try {
                     String catalogUrl = link.attr("abs:href");
-                    LOG.debug("尝试解析目录页面: " + catalogUrl);
+                    LOG.info("正在尝试解析目录页面: " + catalogUrl);
                     Document catalogDoc = Jsoup.connect(catalogUrl)
                         .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                         .timeout(10000)
                         .get();
                     Elements catalogChapters = catalogDoc.select("a[href]");
-                    LOG.debug("目录页面中找到链接数量: " + catalogChapters.size());
+                    LOG.debug("目录页面中找到链接数量: " + catalogChapters.size() + "，开始分析...");
                     
+                    int processedCatalogLinks = 0;
                     for (Element chapter : catalogChapters) {
                         String href = chapter.attr("abs:href");
                         String title = chapter.text().trim();
@@ -110,18 +118,30 @@ public final class UniversalParser implements NovelParser {
                             chapters.add(new Chapter(title, href));
                             LOG.debug("从目录页面找到章节: " + title + " -> " + href);
                         }
+                        
+                        processedCatalogLinks++;
+                        if (processedCatalogLinks % 50 == 0) {
+                            LOG.info(String.format("目录页面已处理 %d/%d 个链接，找到 %d 个章节", 
+                                processedCatalogLinks, catalogChapters.size(), chapters.size()));
+                        }
                     }
                     if (!chapters.isEmpty()) {
-                        LOG.info("成功从目录页面解析到章节列表，数量: " + chapters.size());
+                        LOG.info(String.format("成功从目录页面解析到章节列表，共 %d 章", chapters.size()));
                         break;
                     }
                 } catch (IOException e) {
-                    LOG.warn("解析目录页面失败: " + e.getMessage());
+                    LOG.warn("解析目录页面失败: " + e.getMessage() + "，尝试下一个目录链接");
                 }
             }
         }
         
-        LOG.info("章节解析完成，总数: " + chapters.size());
+        if (chapters.isEmpty()) {
+            LOG.warn("未能找到任何章节，请检查网页结构或尝试其他目录页面");
+        } else {
+            LOG.info(String.format("章节解析完成，共找到 %d 章，正在排序...", chapters.size()));
+            // 可以在这里添加章节排序逻辑
+        }
+        
         return chapters;
     }
 
@@ -129,7 +149,7 @@ public final class UniversalParser implements NovelParser {
     public String parseChapterContent(String chapterId) {
         LOG.debug("开始解析章节内容: " + chapterId);
         try {
-            LOG.debug("尝试获取章节页面...");
+            LOG.info("正在连接章节页面...");
             Document chapterDoc = Jsoup.connect(chapterId)
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
@@ -143,27 +163,31 @@ public final class UniversalParser implements NovelParser {
                 .followRedirects(true)
                 .get();
 
-            LOG.debug("使用文本密度分析查找正文内容...");
-            // 首先尝试直接使用 88xiaoshuo.net 的特定选择器
+            LOG.info("页面获取成功，开始分析正文内容...");
+            // 首先尝试直接使用特定选择器
             Element content = chapterDoc.selectFirst("div#content1");
             if (content == null) {
+                LOG.debug("尝试使用 content1 选择器失败，尝试其他选择器...");
                 content = chapterDoc.selectFirst("div.content_read");
             }
             if (content == null) {
+                LOG.debug("尝试使用 content_read 选择器失败，尝试其他选择器...");
                 content = chapterDoc.selectFirst("div.box_con #content");
             }
             
             // 如果特定选择器没有找到内容，使用通用的文本密度分析
             if (content == null) {
+                LOG.info("常用选择器均未找到内容，切换到智能分析模式...");
                 content = TextDensityAnalyzer.findContentElement(chapterDoc);
             }
 
             if (content != null) {
+                LOG.info("已找到正文内容，开始清理...");
                 // 移除广告和无关内容
                 content.select("script, style, a, iframe, div.adsbygoogle, .bottem, .bottem2").remove();
                 
                 String text = content.text();
-                LOG.debug("找到正文内容，长度: " + text.length());
+                LOG.debug("原始内容长度: " + text.length() + " 字符");
                 
                 // 清理特定的广告文本和无关内容
                 text = text.replaceAll("(?i)(广告|推广|http|www|com|net|org|xyz)[^，。！？]*", "")
@@ -176,12 +200,12 @@ public final class UniversalParser implements NovelParser {
                          .trim();
                 
                 String formatted = TextFormatter.format(text);
-                LOG.debug("格式化后内容长度: " + formatted.length());
+                LOG.info(String.format("内容处理完成，最终长度: %d 字符", formatted.length()));
                 return formatted;
             }
 
-            LOG.warn("未能找到有效的正文内容");
-            return "无法识别章节内容";
+            LOG.warn("未能找到有效的正文内容，可能是页面结构发生变化");
+            return "无法识别章节内容，请检查网页结构是否变化";
         } catch (IOException e) {
             LOG.error("获取章节内容失败: " + chapterId, e);
             throw new RuntimeException("获取章节内容失败：" + e.getMessage(), e);

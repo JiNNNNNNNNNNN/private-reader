@@ -64,6 +64,13 @@
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.ReaderSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.PluginSettings"/>
+    <applicationService serviceImplementation="com.lv.tool.privatereader.settings.NotificationReaderSettings"/>
+    
+    <!-- 消息总线主题 -->
+    <applicationService serviceInterface="com.intellij.util.messages.MessageBusOwner"
+                       serviceImplementation="com.intellij.util.messages.impl.MessageBusImpl"/>
+    <applicationService serviceInterface="com.intellij.util.messages.MessageBus"
+                       serviceImplementation="com.intellij.util.messages.impl.MessageBusImpl"/>
     
     <!-- 设置菜单结构 -->
     <applicationConfigurable
@@ -83,6 +90,12 @@
             instance="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
             id="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
             displayName="字体设置"/>
+            
+    <applicationConfigurable
+            parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
+            instance="com.lv.tool.privatereader.ui.settings.NotificationReaderConfigurable"
+            id="com.lv.tool.privatereader.ui.settings.NotificationReaderConfigurable"
+            displayName="通知栏阅读设置"/>
             
     <applicationConfigurable
             parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
@@ -123,6 +136,39 @@
               text="章节列表"
               description="显示当前书籍的章节列表"
               icon="AllIcons.Actions.ListFiles"/>
+              
+      <separator/>
+      
+      <!-- 阅读控制组 -->
+      <action id="PrivateReader.ToggleReadingMode"
+              class="com.lv.tool.privatereader.ui.actions.ToggleReadingModeAction"
+              text="切换阅读模式"
+              description="在通知栏模式和阅读器模式之间切换"
+              icon="AllIcons.Actions.Preview"/>
+              
+      <action id="PrivateReader.ClearScreen"
+              class="com.lv.tool.privatereader.ui.actions.ClearScreenAction"
+              text="清屏"
+              description="生成多条空白通知以清屏"
+              icon="AllIcons.Actions.GC">
+        <keyboard-shortcut first-keystroke="control 1" keymap="$default"/>
+      </action>
+              
+      <action id="PrivateReader.PrevPage"
+              class="com.lv.tool.privatereader.ui.actions.PrevPageAction"
+              text="上一页"
+              description="阅读上一页内容"
+              icon="AllIcons.Actions.Back">
+        <keyboard-shortcut first-keystroke="control 2" keymap="$default"/>
+      </action>
+              
+      <action id="PrivateReader.NextPage"
+              class="com.lv.tool.privatereader.ui.actions.NextPageAction"
+              text="下一页"
+              description="阅读下一页内容"
+              icon="AllIcons.Actions.Forward">
+        <keyboard-shortcut first-keystroke="control 3" keymap="$default"/>
+      </action>
               
       <separator/>
       
