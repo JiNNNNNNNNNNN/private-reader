@@ -46,9 +46,26 @@ public final class ChapterCacheManager {
         try {
             // 检查缓存是否过期
             if (isExpired(bookId, chapterId)) {
-                Files.delete(cachePath);
+                // 不删除过期内容，只返回null表示需要重新获取
                 return null;
             }
+            return Files.readString(cachePath);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 获取缓存内容，即使已过期
+     * 用于在网络获取失败时作为备用
+     */
+    public String getFallbackCachedContent(String bookId, String chapterId) {
+        if (!isCacheEnabled()) return null;
+
+        Path cachePath = getCachePath(bookId, chapterId);
+        if (!Files.exists(cachePath)) return null;
+
+        try {
             return Files.readString(cachePath);
         } catch (IOException e) {
             return null;

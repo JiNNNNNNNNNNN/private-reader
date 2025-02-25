@@ -21,6 +21,8 @@ import com.lv.tool.privatereader.settings.*;
 import com.lv.tool.privatereader.storage.BookStorage;
 import com.lv.tool.privatereader.storage.ReadingProgressManager;
 import com.lv.tool.privatereader.ui.dialog.AddBookDialog;
+import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
+import com.lv.tool.privatereader.storage.cache.ChapterPreloader;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -61,7 +63,7 @@ public class PrivateReaderPanel extends JPanel {
     private JSplitPane mainSplitPane;
     private JButton toggleLeftPanelButton;
     private int lastDividerLocation = 250;
-    private boolean isNotificationMode = false;
+    private boolean isNotificationMode;
     private Notification currentNotification;
     private String currentContent;
     private int currentPage = 1;
@@ -69,6 +71,7 @@ public class PrivateReaderPanel extends JPanel {
     private static final int MAX_NOTIFICATIONS = 5;
     private final List<Notification> activeNotifications = new ArrayList<>();
     private JButton toggleModeButton;
+    private JButton refreshBtn;
 
     static {
         DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -86,6 +89,10 @@ public class PrivateReaderPanel extends JPanel {
         contentArea = new JTextPane();
         progressLabel = new JBLabel();
         lastReadLabel = new JBLabel();
+        
+        // 从设置中获取阅读模式
+        ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        isNotificationMode = modeSettings.isNotificationMode();
 
         // 检查插件是否启用
         PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
@@ -120,6 +127,25 @@ public class PrivateReaderPanel extends JPanel {
                         if (currentChapter != null && selectedBook != null) {
                             SwingUtilities.invokeLater(() ->
                                     showChapterInNotification(selectedBook, currentChapter, currentContent));
+                        }
+                    }
+                });
+            
+        // 注册阅读模式设置变更监听
+        ApplicationManager.getApplication()
+                .getMessageBus()
+                .connect()
+                .subscribe(ReaderModeSettings.TOPIC, () -> {
+                    ReaderModeSettings settings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+                    boolean newMode = settings.isNotificationMode();
+                    if (newMode != isNotificationMode) {
+                        isNotificationMode = newMode;
+                        updateToggleModeButton();
+                        
+                        // 如果有当前章节，重新加载以应用新模式
+                        NovelParser.Chapter currentChapter = chapterList.getSelectedValue();
+                        if (currentChapter != null) {
+                            SwingUtilities.invokeLater(() -> loadChapter(currentChapter));
                         }
                     }
                 });
@@ -533,6 +559,13 @@ public class PrivateReaderPanel extends JPanel {
         });
         toolBar.add(refreshChaptersButton);
 
+        // 添加刷新按钮
+        refreshBtn = new JButton("刷新章节内容", AllIcons.Actions.Refresh);
+        refreshBtn.setToolTipText("忽略缓存，重新获取当前章节的最新内容");
+        refreshBtn.addActionListener(e -> reloadCurrentChapter());
+        refreshBtn.setEnabled(false);
+        toolBar.add(refreshBtn);
+
         return toolBar;
     }
 
@@ -727,6 +760,12 @@ public class PrivateReaderPanel extends JPanel {
 
                 // 更新进度显示
                 updateProgressInfo();
+
+                // 启用刷新按钮
+                refreshBtn.setEnabled(true);
+                
+                // 启动后台预加载
+                project.getService(ChapterPreloader.class).preloadChapters(selectedBook, currentIndex);
             } catch (Exception e) {
                 String error = "加载章节失败: " + e.getMessage();
                 LOG.error(error, e);
@@ -767,6 +806,9 @@ public class PrivateReaderPanel extends JPanel {
                     // 更新导航按钮状态
                     prevChapterBtn.setEnabled(chapterIndex > 0);
                     nextChapterBtn.setEnabled(chapterIndex < selectedBook.getTotalChapters() - 1);
+                    
+                    // 启动后台预加载
+                    project.getService(ChapterPreloader.class).preloadChapters(selectedBook, chapterIndex);
                 }
             } catch (Exception e) {
                 LOG.error("加载章节失败: " + e.getMessage(), e);
@@ -1015,6 +1057,17 @@ public class PrivateReaderPanel extends JPanel {
 
     public void toggleReadingMode() {
         isNotificationMode = !isNotificationMode;
+        
+        // 更新设置
+        ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        modeSettings.setNotificationMode(isNotificationMode);
+        
+        // 通知设置变更
+        ApplicationManager.getApplication()
+                .getMessageBus()
+                .syncPublisher(ReaderModeSettings.TOPIC)
+                .readerModeSettingsChanged();
+        
         NovelParser.Chapter currentChapter = chapterList.getSelectedValue();
 
         // 更新按钮状态
@@ -1099,5 +1152,70 @@ public class PrivateReaderPanel extends JPanel {
 
     public boolean isNotificationMode() {
         return isNotificationMode;
+    }
+
+    public void reloadCurrentChapter() {
+        NovelParser.Chapter currentChapter = chapterList.getSelectedValue();
+        if (currentChapter != null) {
+            Book selectedBook = bookList.getSelectedValue();
+            if (selectedBook != null) {
+                try {
+                    selectedBook.setProject(project);
+                    NovelParser parser = selectedBook.getParser();
+                    if (parser == null) {
+                        LOG.error("解析器为空，尝试重新创建");
+                        parser = ParserFactory.createParser(selectedBook.getUrl());
+                        selectedBook.setParser(parser);
+                    }
+
+                    if (parser == null) {
+                        String error = "无法创建解析器";
+                        showNotification(error, NotificationType.ERROR);
+                        throw new IllegalStateException(error);
+                    }
+
+                    // 直接调用解析方法，绕过缓存
+                    String content = parser.parseChapterContent(currentChapter.url());
+                    
+                    // 更新缓存
+                    ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
+                    cacheManager.cacheContent(selectedBook.getId(), currentChapter.url(), content);
+                    
+                    // 更新显示
+                    if (isNotificationMode) {
+                        showChapterInNotification(selectedBook, currentChapter, content);
+                    } else {
+                        setContent(content);
+                    }
+                    
+                    showNotification("章节内容已刷新", NotificationType.INFORMATION);
+                } catch (Exception e) {
+                    String error = "刷新内容失败: " + e.getMessage();
+                    LOG.error(error, e);
+                    showNotification(error, NotificationType.ERROR);
+                }
+            }
+        }
+    }
+
+    /**
+     * 释放资源
+     * 在面板销毁时调用，关闭预加载服务等
+     */
+    public void dispose() {
+        try {
+            // 关闭预加载服务
+            ChapterPreloader preloader = project.getService(ChapterPreloader.class);
+            if (preloader != null) {
+                preloader.shutdown();
+            }
+            
+            // 清理通知
+            clearAllNotifications();
+            
+            LOG.info("阅读器面板资源已释放");
+        } catch (Exception e) {
+            LOG.error("释放资源时发生错误: " + e.getMessage(), e);
+        }
     }
 } 

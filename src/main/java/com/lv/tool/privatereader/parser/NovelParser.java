@@ -52,7 +52,7 @@ public interface NovelParser {
 
     /**
      * 获取章节内容
-     * 优先尝试重新获取，失败时使用缓存
+     * 优先使用缓存，缓存不存在或过期时才获取新内容
      */
     default String getChapterContent(String chapterId, Book book) {
         Project project = book.getProject();
@@ -60,20 +60,29 @@ public interface NovelParser {
             throw new IllegalStateException("Book project is not set");
         }
 
+        ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
+        
+        // 优先尝试从缓存获取（只返回未过期的缓存）
+        String cachedContent = cacheManager.getCachedContent(book.getId(), chapterId);
+        
+        // 如果缓存存在且未过期，直接返回缓存内容
+        if (cachedContent != null) {
+            return cachedContent;
+        }
+        
+        // 缓存不存在或已过期，尝试获取新内容
         try {
             String content = parseChapterContent(chapterId);
             // 更新缓存
-            project.getService(ChapterCacheManager.class)
-                .cacheContent(book.getId(), chapterId, content);
+            cacheManager.cacheContent(book.getId(), chapterId, content);
             return content;
         } catch (Exception e) {
-            // 获取失败，尝试使用缓存
-            String cachedContent = project.getService(ChapterCacheManager.class)
-                .getCachedContent(book.getId(), chapterId);
-            if (cachedContent != null) {
-                return cachedContent;
+            // 获取失败，尝试使用任何可用的缓存（即使已过期）
+            String fallbackContent = cacheManager.getFallbackCachedContent(book.getId(), chapterId);
+            if (fallbackContent != null) {
+                return fallbackContent;
             }
-            // 缓存也不可用，返回错误信息
+            // 没有任何可用内容，返回错误信息
             return "章节内容暂时无法访问：" + e.getMessage();
         }
     }

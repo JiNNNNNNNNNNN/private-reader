@@ -1,8 +1,10 @@
 package com.lv.tool.privatereader.ui;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
+import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.settings.PluginSettings;
@@ -12,13 +14,15 @@ import org.jetbrains.annotations.NotNull;
 /**
  * 私人阅读器窗口工厂
  */
-public class PrivateReaderWindowFactory implements ToolWindowFactory {
+public class PrivateReaderWindowFactory implements ToolWindowFactory, Disposable {
+    private PrivateReaderPanel readerPanel;
+    
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        PrivateReaderPanel readerPanel = new PrivateReaderPanel(project);
-        toolWindow.getContentManager().addContent(
-            ContentFactory.getInstance().createContent(readerPanel, "", false)
-        );
+        readerPanel = new PrivateReaderPanel(project);
+        Content content = ContentFactory.getInstance().createContent(readerPanel, "", false);
+        content.setDisposer(this); // 设置资源释放器
+        toolWindow.getContentManager().addContent(content);
 
         // 监听插件设置变更
         ApplicationManager.getApplication()
@@ -43,5 +47,13 @@ public class PrivateReaderWindowFactory implements ToolWindowFactory {
     public boolean shouldBeAvailable(@NotNull Project project) {
         PluginSettings settings = ApplicationManager.getApplication().getService(PluginSettings.class);
         return settings != null && settings.isEnabled();
+    }
+    
+    @Override
+    public void dispose() {
+        if (readerPanel != null) {
+            readerPanel.dispose();
+            readerPanel = null;
+        }
     }
 } 
