@@ -9,9 +9,11 @@ import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.intellij.util.xmlb.annotations.Tag;
 import com.intellij.util.xmlb.annotations.Transient;
+import com.intellij.util.xmlb.annotations.XCollection;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.lv.tool.privatereader.parser.ParserFactory;
+import com.google.gson.annotations.Expose;
 
 /**
  * 书籍模型类
@@ -23,33 +25,36 @@ import com.lv.tool.privatereader.parser.ParserFactory;
 @Tag("Book")
 public class Book {
     /** 书籍唯一标识符 */
-    @Tag private String id;
+    @Tag @Expose private String id;
     /** 书籍标题 */
-    @Tag private String title;
+    @Tag @Expose private String title;
     /** 作者名称 */
-    @Tag private String author;
+    @Tag @Expose private String author;
     /** 书籍来源URL */
-    @Tag private String url;
+    @Tag @Expose private String url;
     /** 创建时间 */
-    @Tag private long createTimeMillis;
+    @Tag @Expose private long createTimeMillis;
     /** 最新章节标题 */
-    @Tag private String lastChapter;
+    @Tag @Expose private String lastChapter;
     /** 上次阅读的章节标题 */
-    @Tag private String lastReadChapter;
+    @Tag @Expose private String lastReadChapter;
     /** 上次阅读的章节ID */
-    @Tag private String lastReadChapterId;
+    @Tag @Expose private String lastReadChapterId;
     /** 上次阅读位置（字符偏移量） */
-    @Tag private int lastReadPosition;
+    @Tag @Expose private int lastReadPosition;
     /** 上次阅读时间戳 */
-    @Tag private long lastReadTimeMillis;
+    @Tag @Expose private long lastReadTimeMillis;
     /** 总章节数 */
-    @Tag private int totalChapters;
+    @Tag @Expose private int totalChapters;
     /** 当前阅读的章节索引 */
-    @Tag private int currentChapterIndex;
+    @Tag @Expose private int currentChapterIndex;
     /** 是否已读完 */
-    @Tag private boolean finished;
+    @Tag @Expose private boolean finished;
     /** 缓存的章节列表 */
-    @Tag private List<Chapter> cachedChapters;
+    @Tag 
+    @XCollection(style = XCollection.Style.v2)
+    @Expose
+    private List<Chapter> cachedChapters;
     /** 关联的项目实例 */
     @Transient private Project project;
     /** 书籍内容解析器 */

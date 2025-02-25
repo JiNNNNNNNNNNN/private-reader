@@ -5,6 +5,7 @@ import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.jetbrains.annotations.NotNull;
+import com.google.gson.annotations.Expose;
 
 import java.util.List;
 import java.util.Objects;
@@ -98,7 +99,12 @@ public interface NovelParser {
      */
     @Tag("Chapter")
     class Chapter {
+        @Tag("title")
+        @Expose
         private String title = "";
+        
+        @Tag("url")
+        @Expose
         private String url = "";
 
         public Chapter() {

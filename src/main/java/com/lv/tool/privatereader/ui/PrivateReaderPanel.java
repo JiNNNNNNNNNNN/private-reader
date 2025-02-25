@@ -416,7 +416,7 @@ public class PrivateReaderPanel extends JPanel {
                 selectedBook.setProject(project);
 
                 String lastChapterId = selectedBook.getLastReadChapterId();
-                if (lastChapterId != null) {
+                if (lastChapterId != null && !lastChapterId.isEmpty()) {
                     currentChapterId = lastChapterId;
                     NovelParser parser = selectedBook.getParser();
                     String content = parser.getChapterContent(lastChapterId, selectedBook);
@@ -436,6 +436,20 @@ public class PrivateReaderPanel extends JPanel {
                         prevChapterBtn.setEnabled(currentIndex > 0);
                         nextChapterBtn.setEnabled(currentIndex < chapters.size() - 1);
                     }
+                } else {
+                    // 如果没有上次阅读的章节记录
+                    LOG.info("没有上次阅读的章节记录，请从章节列表中选择要阅读的章节");
+                    showNotification("没有上次阅读的章节记录，请从章节列表中选择要阅读的章节", NotificationType.INFORMATION);
+                    
+                    // 清空内容区域
+                    setContent("");
+                    currentChapterId = null;
+                    
+                    // 更新章节列表，会自动选择第一章
+                    updateChapterList();
+                    
+                    // 禁用刷新按钮
+                    refreshBtn.setEnabled(false);
                 }
             } catch (Exception e) {
                 LOG.error("加载上次阅读章节失败: " + e.getMessage(), e);
@@ -682,6 +696,29 @@ public class PrivateReaderPanel extends JPanel {
                                 break;
                             }
                         }
+                    } else {
+                        // 如果没有上次阅读的章节，选择第一章并清空内容区域
+                        LOG.info("没有上次阅读的章节记录，重置到第一章");
+                        if (!chapters.isEmpty()) {
+                            // 不触发章节加载，只选中第一章
+                            chapterList.removeListSelectionListener(chapterList.getListSelectionListeners()[0]);
+                            chapterList.setSelectedIndex(0);
+                            chapterList.ensureIndexIsVisible(0);
+                            chapterList.addListSelectionListener(e -> {
+                                if (!e.getValueIsAdjusting()) {
+                                    NovelParser.Chapter selectedChapter = chapterList.getSelectedValue();
+                                    if (selectedChapter != null) {
+                                        loadChapter(selectedChapter);
+                                    }
+                                }
+                            });
+                            // 清空内容区域
+                            setContent("");
+                            // 重置当前章节ID
+                            currentChapterId = null;
+                            // 禁用刷新按钮
+                            refreshBtn.setEnabled(false);
+                        }
                     }
                 } else {
                     String error = "无法创建解析器，请检查书籍URL是否正确";
@@ -697,6 +734,12 @@ public class PrivateReaderPanel extends JPanel {
             }
         } else {
             chapterList.setListData(new NovelParser.Chapter[0]);
+            // 清空内容区域
+            setContent("");
+            // 重置当前章节ID
+            currentChapterId = null;
+            // 禁用刷新按钮
+            refreshBtn.setEnabled(false);
         }
     }
 

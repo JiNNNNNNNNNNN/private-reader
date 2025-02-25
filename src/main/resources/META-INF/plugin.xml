@@ -65,6 +65,7 @@
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="PrivateReader" anchor="right" 
         factoryClass="com.lv.tool.privatereader.ui.PrivateReaderWindowFactory"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.storage.StorageManager"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.BookStorage"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheManager"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterPreloader"/>
