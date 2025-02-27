@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'com.lv.tool'
-version '1.0-SNAPSHOT'
+version '1.0.0'
 
 repositories {
     mavenCentral()
@@ -35,6 +35,28 @@ intellij {
 patchPluginXml {
     sinceBuild = '241'
     untilBuild = '251.*'
+    changeNotes = """
+      <h3>1.0.0</h3>
+      <ul>
+        <li>首次发布</li>
+        <li>基础功能实现：
+          <ul>
+            <li>支持添加、移除书籍</li>
+            <li>支持阅读进度保存和同步</li>
+            <li>支持章节内容缓存和预加载</li>
+            <li>支持通用网站智能解析</li>
+            <li>支持阅读器模式和通知栏模式切换</li>
+          </ul>
+        </li>
+        <li>性能优化：
+          <ul>
+            <li>智能缓存系统</li>
+            <li>后台预加载</li>
+            <li>异步加载不阻塞</li>
+          </ul>
+        </li>
+      </ul>
+      """
 }
 
 java {

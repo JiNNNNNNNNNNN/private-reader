@@ -26,6 +26,7 @@ public final class ChapterPreloader {
     private final Project project;
     private final ExecutorService executorService;
     private boolean isPreloading = false;
+    private String currentPreloadingBookId = null; // 当前正在预加载的书籍ID
     
     public ChapterPreloader(Project project) {
         this.project = project;
@@ -35,6 +36,18 @@ public final class ChapterPreloader {
             thread.setDaemon(true); // 设置为守护线程，不阻止JVM退出
             return thread;
         });
+    }
+    
+    /**
+     * 停止指定书籍的预加载任务
+     * @param bookId 书籍ID
+     */
+    public void stopPreload(String bookId) {
+        if (bookId != null && bookId.equals(currentPreloadingBookId)) {
+            LOG.info("停止书籍预加载任务: " + bookId);
+            isPreloading = false;
+            currentPreloadingBookId = null;
+        }
     }
     
     /**
@@ -66,6 +79,7 @@ public final class ChapterPreloader {
         }
         
         isPreloading = true;
+        currentPreloadingBookId = book.getId();
         
         CompletableFuture.runAsync(() -> {
             try {
@@ -93,7 +107,7 @@ public final class ChapterPreloader {
                 int endIndex = Math.min(currentChapterIndex + preloadCount, totalChapters - 1);
                 
                 // 预加载后续章节
-                for (int i = currentChapterIndex + 1; i <= endIndex; i++) {
+                for (int i = currentChapterIndex + 1; i <= endIndex && isPreloading; i++) {
                     NovelParser.Chapter chapter = chapters.get(i);
                     if (chapter == null) continue;
                     
@@ -127,6 +141,7 @@ public final class ChapterPreloader {
                 LOG.error("章节预加载过程发生错误: " + e.getMessage(), e);
             } finally {
                 isPreloading = false;
+                currentPreloadingBookId = null;
             }
         }, executorService);
     }

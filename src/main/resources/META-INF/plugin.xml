@@ -2,36 +2,56 @@
 <idea-plugin>
   <id>com.lv.tool.private-reader</id>
   <name>Private Reader</name>
-  <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+  <vendor url="https://github.com/JiNNNNNNNNNNN/private-reader">JiN</vendor>
 
   <description><![CDATA[
-    <h2>私人阅读器</h2>
-    <p>一个轻量级的小说阅读插件，支持多个小说网站的内容抓取和本地阅读。</p>
+    A lightweight novel reading plugin for JetBrains IDEs that supports content extraction from various novel websites and local reading.
     
-    <h3>主要功能：</h3>
+    <h2>Key Features</h2>
     <ul>
-      <li>支持通用网站内容智能抓取</li>
-      <li>本地阅读进度保存</li>
-      <li>章节内容缓存</li>
-      <li>优雅的阅读界面</li>
-      <li>快捷键支持</li>
-      <li>自定义字体和大小</li>
-      <li>阅读器模式和通知栏模式切换</li>
-      <li>章节内容刷新（忽略缓存）</li>
+      <li>Smart Content Extraction
+        <ul>
+          <li>Universal website content parsing</li>
+          <li>Automatic chapter structure recognition</li>
+          <li>Intelligent ad filtering</li>
+        </ul>
+      </li>
+      <li>Dual Reading Modes
+        <ul>
+          <li>Reader Mode: Immersive reading experience</li>
+          <li>Notification Mode: Lightweight reading option</li>
+        </ul>
+      </li>
+      <li>Progress Management
+        <ul>
+          <li>Real-time progress synchronization</li>
+          <li>Automatic reading position tracking</li>
+          <li>Multi-dimensional progress display</li>
+        </ul>
+      </li>
+      <li>Performance Optimization
+        <ul>
+          <li>Smart caching system</li>
+          <li>Background chapter preloading</li>
+          <li>Asynchronous loading</li>
+        </ul>
+      </li>
     </ul>
     
-    <h3>支持的来源：</h3>
-    <ul>
-      <li>任意小说网站（智能解析）</li>
-    </ul>
-    
-    <h3>使用方法：</h3>
+    <h2>Usage</h2>
     <ol>
-      <li>在Tools菜单中找到"Private Reader"相关选项</li>
-      <li>点击 "添加书籍" 添加新书</li>
-      <li>在右侧工具窗口中打开书籍开始阅读</li>
-      <li>使用快捷键Ctrl+1 清屏，Ctrl+2 上一页，Ctrl+3 下一页，Ctrl+4 刷新章节内容</li>
-      <li>在设置中可以自定义字体、阅读模式和缓存选项</li>
+      <li>Find "Private Reader" options in the Tools menu</li>
+      <li>Click "Add Book" to add a new book</li>
+      <li>Open books in the right tool window</li>
+      <li>Use keyboard shortcuts:
+        <ul>
+          <li>Ctrl+1: Clear screen</li>
+          <li>Ctrl+2: Previous page</li>
+          <li>Ctrl+3: Next page</li>
+          <li>Ctrl+4: Refresh chapter content</li>
+        </ul>
+      </li>
+      <li>Customize fonts, reading mode and cache options in settings</li>
     </ol>
   ]]></description>
 

@@ -1,8 +1,10 @@
 package com.lv.tool.privatereader.storage;
 
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import org.jetbrains.annotations.NotNull;
 import java.time.Instant;
 
@@ -11,6 +13,7 @@ import java.time.Instant;
  */
 @Service(Service.Level.PROJECT)
 public final class ReadingProgressManager {
+    private static final Logger LOG = Logger.getInstance(ReadingProgressManager.class);
     private final Project project;
     private final BookStorage bookStorage;
 
@@ -23,18 +26,19 @@ public final class ReadingProgressManager {
      * 更新阅读进度
      */
     public void updateProgress(@NotNull Book book, String chapterId, String chapterTitle, int position) {
-        book.setLastReadChapterId(chapterId);
-        book.setLastReadChapter(chapterTitle);
-        book.setLastReadPosition(position);
-        book.setLastReadTimeMillis(System.currentTimeMillis());
-        
-        // 自动处理已读未读状态
-        if (book.getCurrentChapterIndex() >= book.getTotalChapters() - 1 && position > 0.9) {
-            book.setFinished(true);
-        } else {
-            book.setFinished(false);
+        if (book == null || chapterId == null) {
+            LOG.warn("无法更新阅读进度：book 或 chapterId 为空");
+            return;
         }
-        bookStorage.updateBook(book);
+        
+        // 更新最后阅读信息
+        book.updateReadingProgress(chapterId, chapterTitle, position);
+        
+        // 保存更新
+        project.getService(BookStorage.class).updateBook(book);
+        
+        // 发布更新事件
+        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
     }
 
     /**
@@ -56,15 +60,18 @@ public final class ReadingProgressManager {
      * 更新当前章节索引
      */
     public void updateCurrentChapter(@NotNull Book book, int currentChapterIndex) {
+        if (book == null) {
+            LOG.warn("无法更新当前章节：book 为空");
+            return;
+        }
+        
         book.setCurrentChapterIndex(currentChapterIndex);
         
-        // 更新已读未读状态
-        if (currentChapterIndex >= book.getTotalChapters() - 1 && book.getLastReadPosition() > 0.9) {
-            book.setFinished(true);
-        } else {
-            book.setFinished(false);
-        }
-        bookStorage.updateBook(book);
+        // 保存更新
+        project.getService(BookStorage.class).updateBook(book);
+        
+        // 发布更新事件
+        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
     }
 
     /**
@@ -88,12 +95,18 @@ public final class ReadingProgressManager {
      * 重置阅读进度
      */
     public void resetProgress(@NotNull Book book) {
-        book.setLastReadChapterId(null);
-        book.setLastReadChapter(null);
-        book.setLastReadPosition(0);
-        book.setLastReadTimeMillis(0L);
+        if (book == null) {
+            LOG.warn("无法重置阅读进度：book 为空");
+            return;
+        }
+        
         book.setCurrentChapterIndex(0);
-        book.setFinished(false);
-        bookStorage.updateBook(book);
+        book.updateReadingProgress("", "", 0);
+        
+        // 保存更新
+        project.getService(BookStorage.class).updateBook(book);
+        
+        // 发布更新事件
+        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
     }
 } 

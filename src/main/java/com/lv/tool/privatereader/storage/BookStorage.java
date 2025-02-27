@@ -7,6 +7,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookIndex;
+import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.intellij.util.xmlb.annotations.Tag;
@@ -20,6 +21,8 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
+import com.google.gson.ExclusionStrategy;
+import com.google.gson.FieldAttributes;
 
 import java.io.File;
 import java.io.FileReader;
@@ -33,6 +36,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.lang.reflect.Type;
 import java.util.stream.Collectors;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 书籍存储服务
@@ -53,6 +59,9 @@ import java.util.stream.Collectors;
 @Tag("BookStorage")
 public class BookStorage implements PersistentStateComponent<BookStorage> {
     private static final Logger LOG = Logger.getInstance(BookStorage.class);
+    private static final int MAX_CACHE_SIZE = 100; // 最大内存缓存数量
+    private static final long CLEANUP_INTERVAL = TimeUnit.HOURS.toMillis(1); // 清理间隔
+    private long lastCleanupTime = 0;
     
     static {
         LOG.setLevel(LogLevel.DEBUG);
@@ -67,18 +76,48 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
     private final Path indexFilePath;
     private final StorageManager storageManager;
     
-    // 内存缓存，用于存储已加载的书籍详情
-    private final Map<String, Book> bookCache = new HashMap<>();
+    // 内存缓存，使用LRU策略
+    private final Map<String, CacheEntry> bookCache = new LinkedHashMap<String, CacheEntry>(MAX_CACHE_SIZE, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
+            return size() > MAX_CACHE_SIZE;
+        }
+    };
+    
+    // 缓存条目，包含时间戳
+    private static class CacheEntry {
+        final Book book;
+        final long timestamp;
+        
+        CacheEntry(Book book) {
+            this.book = book;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
 
     public BookStorage(Project project) {
         this.project = project;
         this.storageManager = project.getService(StorageManager.class);
         
-        // 创建Gson实例，添加Chapter类的类型适配器，禁用反射访问私有字段
+        // 创建Gson实例，添加压缩选项
         this.gson = new GsonBuilder()
             .setPrettyPrinting()
-            .disableJdkUnsafe() // 禁用不安全的JDK访问
-            .excludeFieldsWithoutExposeAnnotation() // 只序列化带有@Expose注解的字段
+            .disableJdkUnsafe()
+            .excludeFieldsWithoutExposeAnnotation()
+            .setExclusionStrategies(new ExclusionStrategy() {
+                @Override
+                public boolean shouldSkipField(FieldAttributes f) {
+                    // 排除不需要序列化的字段
+                    return f.getName().equals("parser") || 
+                           f.getName().equals("project") ||
+                           f.getName().equals("cachedChapters");
+                }
+
+                @Override
+                public boolean shouldSkipClass(Class<?> clazz) {
+                    return false;
+                }
+            })
             .registerTypeAdapter(Chapter.class, new TypeAdapter<Chapter>() {
                 @Override
                 public void write(JsonWriter out, Chapter value) throws IOException {
@@ -228,9 +267,50 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
             })
             .create();
             
-        // 使用StorageManager获取书籍索引文件路径
         this.indexFilePath = Path.of(storageManager.getBooksPath(), "index.json");
         loadBooks();
+    }
+
+    /**
+     * 定期清理过期缓存
+     */
+    private void cleanupIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastCleanupTime > CLEANUP_INTERVAL) {
+            LOG.info("开始清理过期缓存...");
+            
+            // 清理过期的内存缓存
+            bookCache.entrySet().removeIf(entry -> 
+                now - entry.getValue().timestamp > TimeUnit.DAYS.toMillis(1));
+            
+            // 压缩索引文件
+            compressIndex();
+            
+            lastCleanupTime = now;
+            LOG.info("缓存清理完成");
+        }
+    }
+
+    /**
+     * 压缩索引文件
+     * 删除无效的书籍记录
+     */
+    private void compressIndex() {
+        List<Book> validBooks = new ArrayList<>();
+        for (Book book : books) {
+            Path bookDir = Path.of(storageManager.getBookDirectory(book.getId()));
+            if (Files.exists(bookDir)) {
+                validBooks.add(book);
+            } else {
+                LOG.info("删除无效书籍记录: " + book.getTitle());
+            }
+        }
+        
+        if (validBooks.size() < books.size()) {
+            books = validBooks;
+            saveBookIndex();
+            LOG.info("索引压缩完成，删除了 " + (books.size() - validBooks.size()) + " 条无效记录");
+        }
     }
 
     /**
@@ -239,6 +319,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
      */
     @Override
     public @Nullable BookStorage getState() {
+        cleanupIfNeeded();
         LOG.debug("获取存储状态");
         return this;
     }
@@ -282,6 +363,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
      * @return 书籍列表的副本
      */
     public List<Book> getAllBooks() {
+        cleanupIfNeeded();
         if (books == null) {
             LOG.warn("books 列表为 null，创建新列表");
             books = new ArrayList<>();
@@ -306,9 +388,12 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
      * @return 书籍对象，如果不存在则返回null
      */
     public Book getBook(String bookId) {
+        cleanupIfNeeded();
+        
         // 先从缓存中查找
-        if (bookCache.containsKey(bookId)) {
-            return bookCache.get(bookId);
+        CacheEntry entry = bookCache.get(bookId);
+        if (entry != null) {
+            return entry.book;
         }
         
         // 再从内存中查找
@@ -318,7 +403,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
                 Book detailedBook = getBookDetails(bookId);
                 if (detailedBook != null) {
                     // 更新缓存
-                    bookCache.put(bookId, detailedBook);
+                    bookCache.put(bookId, new CacheEntry(detailedBook));
                     return detailedBook;
                 }
                 return book;
@@ -334,6 +419,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
      * @param book 要添加的书籍
      */
     public void addBook(Book book) {
+        cleanupIfNeeded();
         LOG.info("尝试添加书籍: " + book.getTitle());
         if (books == null) {
             books = new ArrayList<>();
@@ -346,7 +432,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
             LOG.info("成功添加书籍: " + book.getTitle());
             
             // 更新缓存
-            bookCache.put(book.getId(), book);
+            bookCache.put(book.getId(), new CacheEntry(book));
             
             // 保存索引和详情
             saveBookIndex();
@@ -364,6 +450,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
      * @param book 要移除的书籍
      */
     public void removeBook(Book book) {
+        cleanupIfNeeded();
         LOG.info("尝试移除书籍: " + book.getTitle());
         if (books != null) {
             boolean removed = books.removeIf(b -> b.getId().equals(book.getId()));
@@ -376,11 +463,33 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
                 // 保存索引
                 saveBookIndex();
                 
-                // 删除书籍详情文件
+                // 删除书籍详情文件和目录
                 deleteBookDetails(book.getId());
+                deleteBookDirectory(book.getId());
+                
+                // 清理章节缓存
+                project.getService(ChapterCacheManager.class).cleanupBookCache(book.getId());
             } else {
                 LOG.debug("未找到要移除的书籍: " + book.getTitle());
             }
+        }
+    }
+
+    /**
+     * 删除书籍目录及其所有内容
+     */
+    private void deleteBookDirectory(String bookId) {
+        try {
+            Path bookDir = Path.of(storageManager.getBookDirectory(bookId));
+            if (Files.exists(bookDir)) {
+                Files.walk(bookDir)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+                LOG.info("已删除书籍目录: " + bookDir);
+            }
+        } catch (IOException e) {
+            LOG.error("删除书籍目录失败: " + e.getMessage(), e);
         }
     }
 
@@ -403,7 +512,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
             
             if (updated) {
                 // 更新缓存
-                bookCache.put(book.getId(), book);
+                bookCache.put(book.getId(), new CacheEntry(book));
                 
                 // 保存索引和详情
                 saveBookIndex();
@@ -515,7 +624,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
     private Book getBookDetails(String bookId) {
         // 先从缓存中查找
         if (bookCache.containsKey(bookId)) {
-            return bookCache.get(bookId);
+            return bookCache.get(bookId).book;
         }
         
         try {
@@ -531,7 +640,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
                 Book book = gson.fromJson(reader, Book.class);
                 if (book != null) {
                     // 更新缓存
-                    bookCache.put(bookId, book);
+                    bookCache.put(bookId, new CacheEntry(book));
                 }
                 return book;
             }
@@ -614,7 +723,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
                 books.add(book);
                 
                 // 更新缓存
-                bookCache.put(book.getId(), book);
+                bookCache.put(book.getId(), new CacheEntry(book));
             }
             
             LOG.info("从索引文件加载了 " + books.size() + " 本书");
@@ -643,7 +752,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
             // 将数据迁移到新的存储结构
             for (Book book : books) {
                 saveBookDetails(book);
-                bookCache.put(book.getId(), book);
+                bookCache.put(book.getId(), new CacheEntry(book));
             }
             
             // 保存索引

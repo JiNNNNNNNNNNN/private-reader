@@ -10,7 +10,9 @@ import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.storage.BookStorage;
 import com.lv.tool.privatereader.storage.ReadingProgressManager;
+import com.lv.tool.privatereader.storage.cache.ChapterPreloader;
 import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -33,6 +35,13 @@ public class BookshelfDialog extends DialogWrapper {
         this.project = project;
         this.bookStorage = project.getService(BookStorage.class);
         this.bookList = new JBList<>();
+        
+        // 订阅书籍更新事件
+        project.getMessageBus().connect().subscribe(BookshelfTopics.BOOK_UPDATED, book -> {
+            if (book != null) {
+                refreshBookList();
+            }
+        });
         
         init();
         setTitle("书架");
@@ -142,8 +151,18 @@ public class BookshelfDialog extends DialogWrapper {
                 );
                 
                 if (result == Messages.YES) {
+                    // 停止预加载任务
+                    ChapterPreloader preloader = project.getService(ChapterPreloader.class);
+                    preloader.stopPreload(selectedBook.getId());
+                    // 删除书籍
                     bookStorage.removeBook(selectedBook);
+                    // 刷新书架对话框
                     refreshBookList();
+                    // 刷新阅读面板
+                    PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
+                    if (panel != null) {
+                        panel.refresh();
+                    }
                 }
             }
         });
@@ -223,8 +242,14 @@ public class BookshelfDialog extends DialogWrapper {
                     }
                 }
                 
+                // 先设置选中的书籍
                 panel.getBookList().setSelectedValue(selectedBook, true);
+                // 禁用ListSelectionListener
+                panel.disableBookListListener();
+                // 加载上次阅读的章节
                 panel.loadLastReadChapter();
+                // 重新启用ListSelectionListener
+                panel.enableBookListListener();
                 close(OK_EXIT_CODE);
             }
         }

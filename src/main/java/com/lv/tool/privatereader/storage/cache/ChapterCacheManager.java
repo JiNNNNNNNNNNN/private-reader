@@ -14,6 +14,8 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.stream.Stream;
 import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 章节缓存管理器
@@ -30,12 +32,15 @@ public final class ChapterCacheManager {
     private final Project project;
     private final Path cacheDir;
     private final StorageManager storageManager;
+    private static final long MAX_CACHE_AGE_MILLIS = TimeUnit.DAYS.toMillis(7); // 默认缓存7天
+    private static final long MIN_FREE_SPACE_MB = 100; // 最小剩余空间(MB)
 
     public ChapterCacheManager(Project project) {
         this.project = project;
         this.storageManager = project.getService(StorageManager.class);
-        // 使用StorageManager获取缓存目录路径
         this.cacheDir = Path.of(storageManager.getCachePath());
+        // 启动时执行一次缓存清理
+        cleanupCache();
     }
 
     /**
@@ -235,12 +240,9 @@ public final class ChapterCacheManager {
      * @return 缓存文件路径
      */
     private Path getCachePath(String bookId, String chapterId) {
-        // 将 URL 转换为有效的文件名
-        String safeChapterId = chapterId.replaceAll("[\\\\/:*?\"<>|]", "_")
-            .replaceAll("https?_", "")  // 移除 http(s)_ 前缀
-            .replaceAll("www_", "")     // 移除 www_ 前缀
-            .replaceAll("_+", "_");     // 合并多个下划线
-        return cacheDir.resolve(bookId).resolve(safeChapterId + ".txt");
+        String safeBookId = StorageManager.getSafeFileName(bookId);
+        String safeFileName = StorageManager.getCacheFileName(chapterId);
+        return cacheDir.resolve(safeBookId).resolve(safeFileName);
     }
 
     /**
@@ -280,5 +282,119 @@ public final class ChapterCacheManager {
      */
     public String getCacheDirPath() {
         return cacheDir.toString();
+    }
+
+    /**
+     * 清理缓存
+     * - 删除过期缓存
+     * - 检查磁盘空间
+     * - 如果空间不足，删除最旧的缓存
+     */
+    public void cleanupCache() {
+        if (!Files.exists(cacheDir)) return;
+
+        try {
+            LOG.info("开始清理缓存...");
+            long startTime = System.currentTimeMillis();
+            
+            // 1. 删除过期缓存
+            deleteExpiredCache();
+            
+            // 2. 检查磁盘空间
+            long freeSpace = cacheDir.toFile().getFreeSpace() / (1024 * 1024); // 转换为MB
+            if (freeSpace < MIN_FREE_SPACE_MB) {
+                LOG.info("磁盘空间不足，当前剩余: " + freeSpace + "MB，开始清理旧缓存");
+                deleteOldCache();
+            }
+            
+            long duration = System.currentTimeMillis() - startTime;
+            LOG.info("缓存清理完成，耗时: " + duration + "ms");
+        } catch (Exception e) {
+            LOG.error("缓存清理失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 删除过期缓存
+     */
+    private void deleteExpiredCache() {
+        try {
+            long now = System.currentTimeMillis();
+            Files.walk(cacheDir)
+                .filter(Files::isRegularFile)
+                .filter(p -> {
+                    try {
+                        long lastModified = Files.getLastModifiedTime(p).toMillis();
+                        return (now - lastModified) > MAX_CACHE_AGE_MILLIS;
+                    } catch (IOException e) {
+                        return false;
+                    }
+                })
+                .forEach(p -> {
+                    try {
+                        Files.delete(p);
+                        LOG.debug("删除过期缓存: " + p);
+                    } catch (IOException e) {
+                        LOG.warn("删除过期缓存失败: " + p, e);
+                    }
+                });
+        } catch (IOException e) {
+            LOG.error("删除过期缓存失败", e);
+        }
+    }
+
+    /**
+     * 删除旧缓存文件直到空间足够
+     */
+    private void deleteOldCache() {
+        try {
+            // 获取所有缓存文件并按修改时间排序
+            List<Path> cacheFiles = Files.walk(cacheDir)
+                .filter(Files::isRegularFile)
+                .sorted((p1, p2) -> {
+                    try {
+                        return Files.getLastModifiedTime(p1).compareTo(Files.getLastModifiedTime(p2));
+                    } catch (IOException e) {
+                        return 0;
+                    }
+                })
+                .collect(Collectors.toList());
+
+            // 从最旧的文件开始删除，直到空间足够
+            for (Path file : cacheFiles) {
+                if (cacheDir.toFile().getFreeSpace() / (1024 * 1024) >= MIN_FREE_SPACE_MB) {
+                    break;
+                }
+                try {
+                    Files.delete(file);
+                    LOG.debug("删除旧缓存: " + file);
+                } catch (IOException e) {
+                    LOG.warn("删除旧缓存失败: " + file, e);
+                }
+            }
+        } catch (IOException e) {
+            LOG.error("删除旧缓存失败", e);
+        }
+    }
+
+    /**
+     * 清理指定书籍的缓存
+     * @param bookId 书籍ID
+     */
+    public void cleanupBookCache(String bookId) {
+        if (bookId == null || bookId.isEmpty()) return;
+        
+        Path bookCacheDir = cacheDir.resolve(bookId);
+        if (!Files.exists(bookCacheDir)) return;
+        
+        try {
+            Files.walk(bookCacheDir)
+                .sorted(Comparator.reverseOrder())
+                .map(Path::toFile)
+                .forEach(File::delete);
+            LOG.info("清理书籍缓存完成: " + bookId);
+        } catch (IOException e) {
+            LOG.error("清理书籍缓存失败: " + bookId, e);
+        }
     }
 } 

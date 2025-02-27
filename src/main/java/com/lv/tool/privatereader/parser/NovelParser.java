@@ -26,21 +26,27 @@ public interface NovelParser {
 
     /**
      * 获取章节列表
-     * 优先尝试重新解析，解析失败时使用缓存
+     * 优先使用缓存，缓存不存在或为空时才重新解析
      */
     default List<Chapter> getChapterList(Book book) {
+        // 优先尝试使用缓存
+        List<Chapter> cachedChapters = book.getCachedChapters();
+        if (cachedChapters != null && !cachedChapters.isEmpty()) {
+            return cachedChapters;
+        }
+        
+        // 缓存不存在或为空，尝试重新解析
         try {
             List<Chapter> chapters = parseChapterList();
             // 更新缓存
             book.setCachedChapters(chapters);
             return chapters;
         } catch (Exception e) {
-            // 解析失败，使用缓存
-            List<Chapter> cachedChapters = book.getCachedChapters();
-            if (cachedChapters != null && !cachedChapters.isEmpty()) {
+            // 解析失败，如果有任何缓存可用就使用缓存
+            if (cachedChapters != null) {
                 return cachedChapters;
             }
-            // 缓存也不可用，抛出异常
+            // 完全没有可用数据，抛出异常
             throw new RuntimeException("无法获取章节列表", e);
         }
     }

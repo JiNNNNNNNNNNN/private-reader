@@ -23,9 +23,11 @@ import com.lv.tool.privatereader.storage.ReadingProgressManager;
 import com.lv.tool.privatereader.ui.dialog.AddBookDialog;
 import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.lv.tool.privatereader.storage.cache.ChapterPreloader;
+import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import javax.swing.event.ListSelectionListener;
 import javax.swing.plaf.basic.BasicSplitPaneDivider;
 import javax.swing.plaf.basic.BasicSplitPaneUI;
 import javax.swing.text.*;
@@ -72,6 +74,7 @@ public class PrivateReaderPanel extends JPanel {
     private final List<Notification> activeNotifications = new ArrayList<>();
     private JButton toggleModeButton;
     private JButton refreshBtn;
+    private ListSelectionListener bookListListener;
 
     static {
         DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -155,10 +158,10 @@ public class PrivateReaderPanel extends JPanel {
         add(toolBar, BorderLayout.NORTH);
 
         // 创建导航按钮
-        prevChapterBtn = new JButton("上一章");
-        nextChapterBtn = new JButton("下一章");
-        prevChapterBtn.setFocusPainted(false);
-        nextChapterBtn.setFocusPainted(false);
+        prevChapterBtn = new JButton("上一章", AllIcons.Actions.Back);
+        nextChapterBtn = new JButton("下一章", AllIcons.Actions.Forward);
+        prevChapterBtn.setEnabled(false);
+        nextChapterBtn.setEnabled(false);
         JPanel navigationPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 5));
         navigationPanel.setBorder(JBUI.Borders.empty(5));
         navigationPanel.add(prevChapterBtn);
@@ -175,10 +178,12 @@ public class PrivateReaderPanel extends JPanel {
         bookList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         bookList.setBorder(JBUI.Borders.empty(5));
         bookList.setBackground(UIManager.getColor("Tree.background"));
-        bookList.addListSelectionListener(e -> {
+        // 保存监听器引用
+        bookListListener = e -> {
             updateProgressInfo();
             updateChapterList();
-        });
+        };
+        bookList.addListSelectionListener(bookListListener);
         JBScrollPane bookScrollPane = new JBScrollPane(bookList);
         bookScrollPane.setBorder(JBUI.Borders.customLine(UIManager.getColor("Separator.foreground"), 0, 0, 0, 0));
 
@@ -327,11 +332,40 @@ public class PrivateReaderPanel extends JPanel {
      */
     public void refresh() {
         LOG.debug("刷新阅读器面板");
+        
+        // 清理通知
+        clearAllNotifications();
+        
+        // 重新加载书籍列表
         BookStorage bookStorage = project.getService(BookStorage.class);
         List<Book> books = bookStorage.getAllBooks();
         LOG.debug("获取到书籍数量: " + books.size());
         bookList.setListData(books.toArray(new Book[0]));
+        
+        // 清理章节列表
+        chapterList.setListData(new NovelParser.Chapter[0]);
+        
+        // 清理内容区域
+        setContent("");
+        
+        // 重置当前章节ID
+        currentChapterId = null;
+        
+        // 重置页码
+        currentPage = 1;
+        totalPages = 1;
+        
+        // 禁用刷新按钮
+        refreshBtn.setEnabled(false);
+        
+        // 更新进度信息
         updateProgressInfo();
+        
+        // 如果有选中的书籍，更新章节列表
+        Book selectedBook = bookList.getSelectedValue();
+        if (selectedBook != null) {
+            updateChapterList();
+        }
     }
 
     /**
@@ -379,7 +413,14 @@ public class PrivateReaderPanel extends JPanel {
         if (selectedBook != null) {
             LOG.info(String.format("更新阅读进度 - 书籍: %s, 章节: %s, 位置: %d",
                     selectedBook.getTitle(), chapterTitle, position));
+            
+            // 更新进度
             progressManager.updateProgress(selectedBook, chapterId, chapterTitle, position);
+            
+            // 发布书籍更新事件
+            project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
+            
+            // 更新进度显示
             updateProgressInfo();
         } else {
             LOG.warn("无法更新阅读进度：未选择书籍");
@@ -435,6 +476,16 @@ public class PrivateReaderPanel extends JPanel {
                     if (currentIndex != -1) {
                         prevChapterBtn.setEnabled(currentIndex > 0);
                         nextChapterBtn.setEnabled(currentIndex < chapters.size() - 1);
+                        
+                        // 更新阅读进度
+                        selectedBook.setCurrentChapterIndex(currentIndex + 1); // 设置为1-based索引
+                        selectedBook.setTotalChapters(chapters.size());
+                        // 更新存储
+                        project.getService(BookStorage.class).updateBook(selectedBook);
+                        // 更新进度显示
+                        updateProgressInfo();
+                        // 通知书架对话框更新
+                        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
                     }
                 } else {
                     // 如果没有上次阅读的章节记录
@@ -801,8 +852,10 @@ public class PrivateReaderPanel extends JPanel {
                 prevChapterBtn.setEnabled(currentIndex > 0);
                 nextChapterBtn.setEnabled(currentIndex < chapterList.getModel().getSize() - 1);
 
-                // 更新进度显示
+                // 实时更新进度显示
                 updateProgressInfo();
+                // 通知书架对话框更新
+                project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
 
                 // 启用刷新按钮
                 refreshBtn.setEnabled(true);
@@ -849,6 +902,11 @@ public class PrivateReaderPanel extends JPanel {
                     // 更新导航按钮状态
                     prevChapterBtn.setEnabled(chapterIndex > 0);
                     nextChapterBtn.setEnabled(chapterIndex < selectedBook.getTotalChapters() - 1);
+                    
+                    // 实时更新进度显示
+                    updateProgressInfo();
+                    // 通知书架对话框更新
+                    project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
                     
                     // 启动后台预加载
                     project.getService(ChapterPreloader.class).preloadChapters(selectedBook, chapterIndex);
@@ -1259,6 +1317,24 @@ public class PrivateReaderPanel extends JPanel {
             LOG.info("阅读器面板资源已释放");
         } catch (Exception e) {
             LOG.error("释放资源时发生错误: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 禁用书籍列表选择监听器
+     */
+    public void disableBookListListener() {
+        if (bookListListener != null) {
+            bookList.removeListSelectionListener(bookListListener);
+        }
+    }
+
+    /**
+     * 启用书籍列表选择监听器
+     */
+    public void enableBookListListener() {
+        if (bookListListener != null) {
+            bookList.addListSelectionListener(bookListListener);
         }
     }
 } 

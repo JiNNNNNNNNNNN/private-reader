@@ -12,7 +12,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
+import java.text.Normalizer;
+import java.util.Base64;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * 存储管理器
@@ -28,6 +31,8 @@ import java.util.List;
 @Service(Service.Level.PROJECT)
 public class StorageManager {
     private static final Logger LOG = Logger.getInstance(StorageManager.class);
+    private static final int MAX_FILENAME_LENGTH = 255; // 大多数文件系统的限制
+    private static final String HASH_ALGORITHM = "SHA-256";
     
     private final Project project;
     private final Path baseStoragePath;
@@ -232,6 +237,109 @@ public class StorageManager {
                     file.delete();
                 }
             }
+        }
+    }
+    
+    /**
+     * 生成安全的文件名
+     * 1. 规范化Unicode字符
+     * 2. 移除非法字符
+     * 3. 处理长度限制
+     * 4. 保持可读性
+     * @param fileName 原始文件名
+     * @return 安全的文件名
+     */
+    @NotNull
+    public static String getSafeFileName(@NotNull String fileName) {
+        // 1. Unicode规范化
+        String normalized = Normalizer.normalize(fileName, Normalizer.Form.NFKC);
+        
+        // 2. 移除非法字符，只保留字母、数字、下划线、中文等安全字符
+        String safe = normalized.replaceAll("[^\\w\\u4e00-\\u9fa5.-]", "_");
+        
+        // 3. 合并多个连续的下划线
+        safe = safe.replaceAll("_+", "_");
+        
+        // 4. 如果文件名过长，使用hash处理
+        if (safe.length() > MAX_FILENAME_LENGTH) {
+            try {
+                // 保留前缀以保持可读性
+                String prefix = safe.substring(0, 20);
+                // 对剩余部分进行hash
+                String remaining = safe.substring(20);
+                String hash = hashString(remaining);
+                // 组合前缀和hash
+                safe = prefix + "_" + hash;
+            } catch (NoSuchAlgorithmException e) {
+                LOG.warn("Hash算法不可用，使用截断方式处理长文件名");
+                safe = safe.substring(0, MAX_FILENAME_LENGTH);
+            }
+        }
+        
+        // 5. 移除首尾的点和下划线
+        safe = safe.replaceAll("^[._]+|[._]+$", "");
+        
+        // 6. 如果文件名为空，使用默认名称
+        if (safe.isEmpty()) {
+            safe = "unnamed_" + System.currentTimeMillis();
+        }
+        
+        return safe;
+    }
+    
+    /**
+     * 对字符串进行hash处理
+     * @param input 输入字符串
+     * @return hash结果（16进制）
+     */
+    private static String hashString(String input) throws NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);
+        byte[] hash = digest.digest(input.getBytes());
+        // 只使用前8个字节，足够区分
+        byte[] shortened = new byte[8];
+        System.arraycopy(hash, 0, shortened, 0, 8);
+        return bytesToHex(shortened);
+    }
+    
+    /**
+     * 将字节数组转换为16进制字符串
+     */
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder hex = new StringBuilder();
+        for (byte b : bytes) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    }
+    
+    /**
+     * 生成章节缓存文件名
+     * @param url 章节URL
+     * @return 安全的缓存文件名
+     */
+    @NotNull
+    public static String getCacheFileName(@NotNull String url) {
+        try {
+            // 1. 移除协议前缀
+            String simplified = url.replaceAll("^https?://", "");
+            
+            // 2. 如果URL较短，直接使用安全文件名
+            if (simplified.length() <= MAX_FILENAME_LENGTH) {
+                return getSafeFileName(simplified) + ".txt";
+            }
+            
+            // 3. 对长URL进行hash处理
+            String hash = hashString(url);
+            
+            // 4. 保留URL的一部分以提高可读性
+            String prefix = getSafeFileName(simplified.substring(0, 30));
+            
+            return prefix + "_" + hash + ".txt";
+        } catch (NoSuchAlgorithmException e) {
+            LOG.warn("Hash算法不可用，使用Base64编码");
+            // 降级方案：使用Base64编码
+            String encoded = Base64.getUrlEncoder().encodeToString(url.getBytes());
+            return getSafeFileName(encoded) + ".txt";
         }
     }
 } 
