@@ -35,7 +35,7 @@ public class NotificationReaderConfigurable implements Configurable {
     @Override
     public @Nullable JComponent createComponent() {
         // 创建每页字数设置
-        SpinnerNumberModel pageSizeModel = new SpinnerNumberModel(80, Integer.MIN_VALUE, Integer.MAX_VALUE, 10);
+        SpinnerNumberModel pageSizeModel = new SpinnerNumberModel(70, Integer.MIN_VALUE, Integer.MAX_VALUE, 10);
         pageSizeSpinner = new JSpinner(pageSizeModel);
         
         // 创建显示页码设置

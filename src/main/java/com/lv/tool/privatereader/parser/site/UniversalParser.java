@@ -16,6 +16,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.SecureRandom;
+import javax.net.ssl.SSLSocketFactory;
+import java.security.cert.X509Certificate;
 
 /**
  * 通用网络小说解析器，用于智能解析网络小说网站
@@ -27,9 +33,11 @@ public final class UniversalParser implements NovelParser {
     );
     private final String url;
     private Document document;
+    private final SSLSocketFactory sslSocketFactory;
 
     public UniversalParser(final String url) {
         this.url = url;
+        this.sslSocketFactory = createInsecureSSLSocketFactory();
         LOG.info("开始解析网址: " + url);
         try {
             LOG.debug("尝试连接网址...");
@@ -43,6 +51,7 @@ public final class UniversalParser implements NovelParser {
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .timeout(10000)
                 .followRedirects(true)
+                .sslSocketFactory(sslSocketFactory)
                 .ignoreContentType(true)
                 .ignoreHttpErrors(true)
                 .get();
@@ -150,18 +159,71 @@ public final class UniversalParser implements NovelParser {
         LOG.debug("开始解析章节内容: " + chapterId);
         try {
             LOG.info("正在连接章节页面...");
-            Document chapterDoc = Jsoup.connect(chapterId)
+            // 直接获取原始字节数据
+            byte[] responseBytes = Jsoup.connect(chapterId)
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
                 .header("Accept-Language", "zh-CN,zh;q=0.9")
                 .header("Cache-Control", "no-cache")
                 .header("Pragma", "no-cache")
                 .header("Referer", url)
-                .header("Cookie", "")  // 清空 Cookie
+                .header("Cookie", "")
                 .timeout(15000)
                 .maxBodySize(0)
                 .followRedirects(true)
-                .get();
+                .sslSocketFactory(sslSocketFactory)
+                .ignoreContentType(true)
+                .ignoreHttpErrors(true)
+                .execute()
+                .bodyAsBytes();
+
+            // 尝试不同的编码解析内容
+            Document chapterDoc = null;
+            String[] encodings = {"UTF-8", "GBK", "GB2312", "GB18030", "BIG5"};
+            String bestContent = null;
+            String bestCharset = null;
+            int minGarbageScore = Integer.MAX_VALUE;
+
+            for (String encoding : encodings) {
+                try {
+                    String html = new String(responseBytes, encoding);
+                    Document doc = Jsoup.parse(html, chapterId);
+                    
+                    // 获取正文内容
+                    Element content = doc.selectFirst("div#content1");
+                    if (content == null) {
+                        content = doc.selectFirst("div.content_read");
+                    }
+                    if (content == null) {
+                        content = doc.selectFirst("div.box_con #content");
+                    }
+                    if (content == null) {
+                        content = TextDensityAnalyzer.findContentElement(doc);
+                    }
+                    
+                    if (content != null) {
+                        String text = content.text();
+                        int garbageScore = calculateGarbageScore(text);
+                        LOG.debug(String.format("编码 %s 的乱码评分: %d", encoding, garbageScore));
+                        
+                        if (garbageScore < minGarbageScore) {
+                            minGarbageScore = garbageScore;
+                            bestContent = text;
+                            bestCharset = encoding;
+                            chapterDoc = doc;
+                        }
+                    }
+                } catch (Exception e) {
+                    LOG.warn("使用编码 " + encoding + " 解析失败: " + e.getMessage());
+                }
+            }
+
+            if (bestCharset != null) {
+                LOG.info("选择最佳编码: " + bestCharset + "，乱码评分: " + minGarbageScore);
+            } else {
+                LOG.warn("未能找到合适的编码，使用默认UTF-8");
+                chapterDoc = Jsoup.parse(new String(responseBytes, "UTF-8"), chapterId);
+            }
 
             LOG.info("页面获取成功，开始分析正文内容...");
             // 首先尝试直接使用特定选择器
@@ -196,7 +258,16 @@ public final class UniversalParser implements NovelParser {
                          .replaceAll("\\s*([，。！？])\\s*", "$1\n")  // 在标点符号后添加换行
                          .replaceAll("\\s+", "\n")  // 将多个空白字符替换为换行
                          .replaceAll("\\n{3,}", "\n\n")  // 限制最大连续换行数
-                         .replaceAll("^\\s*第[一二三四五六七八九十百千万]+[章节].*$", "")  // 移除重复的章节标题
+                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+[章节卷集部篇].*$", "")  // 移除数字章节标题
+                         .replaceAll("^\\s*[0-9]+[、.][^0-9]*$", "")  // 移除数字序号标题
+                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+回.*$", "")  // 移除回数标题
+                         .replaceAll("^\\s*[序楔终][章话].*$", "")  // 移除特殊章节标题
+                         .replaceAll("^\\s*[前序楔引]言.*$", "")  // 移除前言等
+                         .replaceAll("^\\s*[后终]记.*$", "")  // 移除后记等
+                         .replaceAll("^\\s*[卷部篇][0-9零一二三四五六七八九十百千万亿]+.*$", "")  // 移除卷标题
+                         .replaceAll("^\\s*[上中下]篇.*$|^\\s*番外.*$|^\\s*特别篇.*$|^\\s*外传.*$", "")  // 移除特殊篇章标题
+                         .replaceAll("^\\s*[早中午晚]章.*$|^\\s*[春夏秋冬]章.*$", "")  // 移除时间相关章节标题
+                         .replaceAll("^\\s*(间|幕)?插.*$", "")  // 移除插入章节标题
                          .trim();
                 
                 String formatted = TextFormatter.format(text);
@@ -258,5 +329,82 @@ public final class UniversalParser implements NovelParser {
         }
 
         return urlMatch || titleMatch;
+    }
+
+    private SSLSocketFactory createInsecureSSLSocketFactory() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[]{new X509TrustManager() {
+                public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                public X509Certificate[] getAcceptedIssuers() {
+                    return new X509Certificate[0];
+                }
+            }}, new SecureRandom());
+            return sslContext.getSocketFactory();
+        } catch (Exception e) {
+            throw new RuntimeException("创建SSL Socket Factory失败", e);
+        }
+    }
+
+    private int calculateGarbageScore(String text) {
+        if (text == null || text.isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+
+        int score = 0;
+        char[] chars = text.toCharArray();
+        
+        // 1. 检查特殊乱码字符
+        for (char c : chars) {
+            if (c == '\uFFFD' || c == '?' || c == '□' || c == '■' || 
+                c == '\u0000' || c == '\uFFFF' || 
+                (c >= '\uFDD0' && c <= '\uFDEF') ||
+                (c >= '\uFFFE' && c <= '\uFFFF')) {
+                score += 10;
+            }
+        }
+        
+        // 2. 检查连续的非中文字符
+        int consecutiveNonChinese = 0;
+        for (char c : chars) {
+            if (!isValidChinese(c) && c > 0x7F) {
+                consecutiveNonChinese++;
+                if (consecutiveNonChinese > 2) {
+                    score += 5;
+                }
+            } else {
+                consecutiveNonChinese = 0;
+            }
+        }
+        
+        // 3. 检查中文标点符号的合理性
+        boolean hasChinese = false;
+        boolean hasChinesePunctuation = false;
+        for (char c : chars) {
+            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS) {
+                hasChinese = true;
+            }
+            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION) {
+                hasChinesePunctuation = true;
+            }
+        }
+        if (hasChinese && !hasChinesePunctuation) {
+            score += 50;  // 有中文但没有中文标点，可能是编码问题
+        }
+        
+        return score;
+    }
+    
+    private boolean isValidChinese(char c) {
+        // 检查是否是有效的中文字符
+        Character.UnicodeBlock ub = Character.UnicodeBlock.of(c);
+        return ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+            || ub == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
+            || ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+            || ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+            || ub == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
+            || ub == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS
+            || ub == Character.UnicodeBlock.GENERAL_PUNCTUATION;
     }
 }

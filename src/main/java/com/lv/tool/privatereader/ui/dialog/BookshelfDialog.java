@@ -13,6 +13,7 @@ import com.lv.tool.privatereader.storage.ReadingProgressManager;
 import com.lv.tool.privatereader.storage.cache.ChapterPreloader;
 import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
+import com.intellij.notification.NotificationType;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -29,6 +30,7 @@ public class BookshelfDialog extends DialogWrapper {
     private final BookStorage bookStorage;
     private JPanel mainPanel;
     private JComboBox<String> sortComboBox;
+    private static final String NOTIFICATION_GROUP_ID = "Private Reader";
 
     public BookshelfDialog(Project project) {
         super(project);
@@ -101,18 +103,14 @@ public class BookshelfDialog extends DialogWrapper {
                         // 更新存储
                         project.getService(BookStorage.class).updateBook(selectedBook);
                         refreshBookList();
-                        Messages.showInfoMessage(
-                            project,
+                        showNotification(
                             String.format("成功刷新章节列表，共 %d 章", chapters.size()),
-                            "刷新成功"
-                        );
+                            NotificationType.INFORMATION);
                     }
                 } catch (Exception ex) {
-                    Messages.showErrorDialog(
-                        project,
+                    showNotification(
                         "刷新章节列表失败：" + ex.getMessage(),
-                        "错误"
-                    );
+                        NotificationType.ERROR);
                 }
             }
         });
@@ -216,41 +214,71 @@ public class BookshelfDialog extends DialogWrapper {
         bookList.setListData(books.toArray(new Book[0]));
     }
 
+    private void showNotification(String content, NotificationType type) {
+        com.intellij.notification.NotificationGroupManager.getInstance()
+                .getNotificationGroup(NOTIFICATION_GROUP_ID)
+                .createNotification(content, type)
+                .notify(project);
+    }
+
     private void openSelectedBook() {
         Book selectedBook = bookList.getSelectedValue();
         if (selectedBook != null) {
             PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
             if (panel != null) {
-                // 更新书籍进度
-                if (selectedBook.getLastReadChapterId() != null) {
-                    selectedBook.setProject(project);
-                    NovelParser parser = selectedBook.getParser();
-                    if (parser != null) {
-                        List<NovelParser.Chapter> chapters = selectedBook.getCachedChapters();
-                        if (chapters != null) {
-                            // 找到当前章节索引
-                            for (int i = 0; i < chapters.size(); i++) {
-                                if (selectedBook.getLastReadChapterId().equals(chapters.get(i).url())) {
-                                    selectedBook.setCurrentChapterIndex(i + 1); // 设置为1-based索引
-                                    selectedBook.setTotalChapters(chapters.size());
-                                    // 更新存储
-                                    bookStorage.updateBook(selectedBook);
-                                    break;
+                showNotification(
+                    String.format("正在打开《%s》...", selectedBook.getTitle()),
+                    NotificationType.INFORMATION);
+                
+                try {
+                    // 更新书籍进度
+                    if (selectedBook.getLastReadChapterId() != null) {
+                        selectedBook.setProject(project);
+                        NovelParser parser = selectedBook.getParser();
+                        if (parser != null) {
+                            showNotification(
+                                "正在更新阅读进度...",
+                                NotificationType.INFORMATION);
+                                
+                            List<NovelParser.Chapter> chapters = selectedBook.getCachedChapters();
+                            if (chapters != null) {
+                                // 找到当前章节索引
+                                for (int i = 0; i < chapters.size(); i++) {
+                                    if (selectedBook.getLastReadChapterId().equals(chapters.get(i).url())) {
+                                        selectedBook.setCurrentChapterIndex(i + 1); // 设置为1-based索引
+                                        selectedBook.setTotalChapters(chapters.size());
+                                        // 更新存储
+                                        bookStorage.updateBook(selectedBook);
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
+                    
+                    showNotification(
+                        "正在加载章节内容...",
+                        NotificationType.INFORMATION);
+                        
+                    // 先设置选中的书籍
+                    panel.getBookList().setSelectedValue(selectedBook, true);
+                    // 禁用ListSelectionListener
+                    panel.disableBookListListener();
+                    // 加载上次阅读的章节
+                    panel.loadLastReadChapter();
+                    // 重新启用ListSelectionListener
+                    panel.enableBookListListener();
+                    
+                    showNotification(
+                        String.format("《%s》加载完成", selectedBook.getTitle()),
+                        NotificationType.INFORMATION);
+                        
+                    close(OK_EXIT_CODE);
+                } catch (Exception e) {
+                    showNotification(
+                        String.format("加载《%s》失败: %s", selectedBook.getTitle(), e.getMessage()),
+                        NotificationType.ERROR);
                 }
-                
-                // 先设置选中的书籍
-                panel.getBookList().setSelectedValue(selectedBook, true);
-                // 禁用ListSelectionListener
-                panel.disableBookListListener();
-                // 加载上次阅读的章节
-                panel.loadLastReadChapter();
-                // 重新启用ListSelectionListener
-                panel.enableBookListListener();
-                close(OK_EXIT_CODE);
             }
         }
     }
@@ -267,12 +295,17 @@ public class BookshelfDialog extends DialogWrapper {
                     Toolkit.getDefaultToolkit()
                         .getSystemClipboard()
                         .setContents(new StringSelection(url), null);
-                    Messages.showInfoMessage(project, "URL已复制到剪贴板", "复制成功");
+                    showNotification("URL已复制到剪贴板", NotificationType.INFORMATION);
                 }
             });
             popupMenu.add(copyUrlItem);
             
             popupMenu.show(bookList, e.getX(), e.getY());
         }
+    }
+
+    @Override
+    protected void doOKAction() {
+        openSelectedBook();
     }
 } 

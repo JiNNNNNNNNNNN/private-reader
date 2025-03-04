@@ -35,6 +35,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -75,6 +76,8 @@ public class PrivateReaderPanel extends JPanel {
     private JButton toggleModeButton;
     private JButton refreshBtn;
     private ListSelectionListener bookListListener;
+    private boolean isLoadingLastChapter = false;
+    private ListSelectionListener chapterListListener;
 
     static {
         DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -180,8 +183,112 @@ public class PrivateReaderPanel extends JPanel {
         bookList.setBackground(UIManager.getColor("Tree.background"));
         // 保存监听器引用
         bookListListener = e -> {
-            updateProgressInfo();
-            updateChapterList();
+            if (!e.getValueIsAdjusting()) {
+                Book selectedBook = bookList.getSelectedValue();
+                if (selectedBook != null) {
+                    // 清理之前的通知
+                    clearAllNotifications();
+                    
+                    // 禁用章节列表监听器，避免重复通知
+                    if (chapterListListener != null) {
+                        chapterList.removeListSelectionListener(chapterListListener);
+                    }
+                    
+                    // 重置当前章节ID
+                    currentChapterId = null;
+                    
+                    try {
+                        selectedBook.setProject(project);
+                        
+                        // 更新章节列表（不触发进度更新）
+                        NovelParser parser = selectedBook.getParser();
+                        if (parser != null) {
+                            List<NovelParser.Chapter> chapters = selectedBook.getCachedChapters();
+                            if (chapters == null || chapters.isEmpty()) {
+                                chapters = parser.getChapterList(selectedBook);
+                                chapters = chapters.stream()
+                                        .filter(chapter -> chapter != null && !chapter.url().isEmpty())
+                                        .toList();
+                                selectedBook.setCachedChapters(chapters);
+                                project.getService(BookStorage.class).updateBook(selectedBook);
+                            }
+                            
+                            // 先设置章节列表数据，但不添加监听器
+                            chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
+                        }
+                        
+                        // 加载上次阅读的章节
+                        String lastChapterId = selectedBook.getLastReadChapterId();
+                        if (lastChapterId != null && !lastChapterId.isEmpty()) {
+                            // 先设置当前章节ID，避免重复通知
+                            currentChapterId = lastChapterId;
+                            
+                            // 获取章节内容
+                            String content = parser.getChapterContent(lastChapterId, selectedBook);
+                            
+                            if (isNotificationMode) {
+                                List<NovelParser.Chapter> chapters = selectedBook.getCachedChapters();
+                                NovelParser.Chapter lastChapter = null;
+                                int currentIndex = -1;
+                                for (int i = 0; i < chapters.size(); i++) {
+                                    if (chapters.get(i).url().equals(lastChapterId)) {
+                                        lastChapter = chapters.get(i);
+                                        currentIndex = i;
+                                        break;
+                                    }
+                                }
+                                
+                                if (lastChapter != null) {
+                                    // 更新进度和状态（不触发通知）
+                                    if (currentIndex != -1) {
+                                        // 更新当前章节索引和总章节数
+                                        selectedBook.setCurrentChapterIndex(currentIndex + 1);
+                                        selectedBook.setTotalChapters(chapterList.getModel().getSize());
+                                        
+                                        // 更新进度显示
+                                        updateProgressInfo();
+                                        
+                                        // 更新导航按钮状态
+                                        prevChapterBtn.setEnabled(currentIndex > 0);
+                                        nextChapterBtn.setEnabled(currentIndex < chapterList.getModel().getSize() - 1);
+                                    }
+                                    
+                                    // 选中章节（不触发监听器）
+                                    chapterList.setSelectedIndex(currentIndex);
+                                    chapterList.ensureIndexIsVisible(currentIndex);
+                                    
+                                    // 最后才显示内容，避免触发额外通知
+                                    showChapterInNotification(selectedBook, lastChapter, content);
+                                    setContent("已切换到通知栏阅读模式，请在左下角查看内容");
+                                }
+                            } else {
+                                setContent(content);
+                                
+                                // 选中章节（不触发监听器）
+                                for (int i = 0; i < chapterList.getModel().getSize(); i++) {
+                                    NovelParser.Chapter chapter = chapterList.getModel().getElementAt(i);
+                                    if (chapter != null && lastChapterId.equals(chapter.url())) {
+                                        chapterList.setSelectedIndex(i);
+                                        chapterList.ensureIndexIsVisible(i);
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            if (isNotificationMode) {
+                                setContent("已切换到通知栏阅读模式，请在左下角查看内容");
+                            } else {
+                                setContent("");
+                            }
+                        }
+                    } catch (Exception ex) {
+                        LOG.error("加载书籍失败: " + ex.getMessage(), ex);
+                    } finally {
+                        // 重新设置监听器，确保在所有操作完成后才添加
+                        setupChapterListListener();
+                    }
+                }
+            }
         };
         bookList.addListSelectionListener(bookListListener);
         JBScrollPane bookScrollPane = new JBScrollPane(bookList);
@@ -191,14 +298,9 @@ public class PrivateReaderPanel extends JPanel {
         chapterList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         chapterList.setBorder(JBUI.Borders.empty(5));
         chapterList.setBackground(UIManager.getColor("Tree.background"));
-        chapterList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
-                NovelParser.Chapter selectedChapter = chapterList.getSelectedValue();
-                if (selectedChapter != null) {
-                    loadChapter(selectedChapter);
-                }
-            }
-        });
+        // 初始化章节列表监听器
+        setupChapterListListener();
+        chapterList.addListSelectionListener(chapterListListener);
         JBScrollPane chapterScrollPane = new JBScrollPane(chapterList);
         chapterScrollPane.setBorder(JBUI.Borders.customLine(UIManager.getColor("Separator.foreground"), 1, 0, 0, 0));
 
@@ -399,6 +501,10 @@ public class PrivateReaderPanel extends JPanel {
         return bookList;
     }
 
+    public JBList<NovelParser.Chapter> getChapterList() {
+        return chapterList;
+    }
+
     public void setContent(String content) {
         LOG.debug("设置阅读内容，长度: " + (content != null ? content.length() : 0));
         contentArea.setText(content);
@@ -414,11 +520,8 @@ public class PrivateReaderPanel extends JPanel {
             LOG.info(String.format("更新阅读进度 - 书籍: %s, 章节: %s, 位置: %d",
                     selectedBook.getTitle(), chapterTitle, position));
             
-            // 更新进度
+            // 只更新进度，不触发事件
             progressManager.updateProgress(selectedBook, chapterId, chapterTitle, position);
-            
-            // 发布书籍更新事件
-            project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
             
             // 更新进度显示
             updateProgressInfo();
@@ -428,11 +531,20 @@ public class PrivateReaderPanel extends JPanel {
     }
 
     private void navigateChapter(int offset) {
-        clearAllNotifications(); // 切换章节时清理所有通知
+        // 切换章节前先保存当前章节ID
+        String oldChapterId = currentChapterId;
+        
         int currentIndex = chapterList.getSelectedIndex();
         if (currentIndex != -1) {
             int newIndex = currentIndex + offset;
             if (newIndex >= 0 && newIndex < chapterList.getModel().getSize()) {
+                // 获取目标章节
+                NovelParser.Chapter targetChapter = chapterList.getModel().getElementAt(newIndex);
+                
+                // 注意：不再在这里清理通知，而是在loadChapter方法中处理
+                // 这样可以避免重复清理通知
+                
+                // 设置选中索引
                 chapterList.setSelectedIndex(newIndex);
                 chapterList.ensureIndexIsVisible(newIndex);
             }
@@ -453,53 +565,72 @@ public class PrivateReaderPanel extends JPanel {
         if (selectedBook != null) {
             LOG.info("加载上次阅读章节: " + selectedBook.getTitle());
             try {
-                // 设置project
+                isLoadingLastChapter = true;
                 selectedBook.setProject(project);
 
                 String lastChapterId = selectedBook.getLastReadChapterId();
+                // 如果当前章节就是要加载的章节，则不重复加载
+                if (lastChapterId != null && !lastChapterId.isEmpty() && lastChapterId.equals(currentChapterId)) {
+                    LOG.debug("跳过加载相同章节");
+                    return;
+                }
+
                 if (lastChapterId != null && !lastChapterId.isEmpty()) {
-                    currentChapterId = lastChapterId;
                     NovelParser parser = selectedBook.getParser();
                     String content = parser.getChapterContent(lastChapterId, selectedBook);
-                    setContent(content);
-
-                    // 更新导航按钮状态
-                    List<NovelParser.Chapter> chapters = parser.getChapterList(selectedBook);
-                    int currentIndex = -1;
-                    for (int i = 0; i < chapters.size(); i++) {
-                        if (chapters.get(i).url().equals(currentChapterId)) {
-                            currentIndex = i;
-                            break;
+                    
+                    if (isNotificationMode) {
+                        List<NovelParser.Chapter> chapters = parser.getChapterList(selectedBook);
+                        NovelParser.Chapter lastChapter = null;
+                        int currentIndex = -1;
+                        for (int i = 0; i < chapters.size(); i++) {
+                            if (chapters.get(i).url().equals(lastChapterId)) {
+                                lastChapter = chapters.get(i);
+                                currentIndex = i;
+                                break;
+                            }
                         }
-                    }
-
-                    if (currentIndex != -1) {
-                        prevChapterBtn.setEnabled(currentIndex > 0);
-                        nextChapterBtn.setEnabled(currentIndex < chapters.size() - 1);
                         
-                        // 更新阅读进度
-                        selectedBook.setCurrentChapterIndex(currentIndex + 1); // 设置为1-based索引
-                        selectedBook.setTotalChapters(chapters.size());
-                        // 更新存储
-                        project.getService(BookStorage.class).updateBook(selectedBook);
-                        // 更新进度显示
-                        updateProgressInfo();
-                        // 通知书架对话框更新
-                        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
+                        if (lastChapter != null) {
+                            // 移除监听器
+                            if (chapterListListener != null) {
+                                chapterList.removeListSelectionListener(chapterListListener);
+                            }
+                            
+                            updateChapterList();
+                            chapterList.setSelectedIndex(currentIndex);
+                            chapterList.ensureIndexIsVisible(currentIndex);
+                            
+                            // 先更新当前章节ID，避免重复通知
+                            currentChapterId = lastChapterId;
+                            
+                            // 更新进度
+                            if (currentIndex != -1) {
+                                updateBookProgress(selectedBook, lastChapter, currentIndex);
+                            }
+                            
+                            showChapterInNotification(selectedBook, lastChapter, content);
+                            setContent("已切换到通知栏阅读模式，请在左下角查看内容");
+                        }
+                    } else {
+                        if (chapterListListener != null) {
+                            chapterList.removeListSelectionListener(chapterListListener);
+                        }
+                        
+                        // 先更新当前章节ID，避免重复通知
+                        currentChapterId = lastChapterId;
+                        
+                        updateChapterList();
+                        setContent(content);
                     }
                 } else {
-                    // 如果没有上次阅读的章节记录
-                    LOG.info("没有上次阅读的章节记录，请从章节列表中选择要阅读的章节");
-                    showNotification("没有上次阅读的章节记录，请从章节列表中选择要阅读的章节", NotificationType.INFORMATION);
-                    
-                    // 清空内容区域
-                    setContent("");
+                    if (isNotificationMode) {
+                        setContent("已切换到通知栏阅读模式，请在左下角查看内容");
+                    } else {
+                        setContent("");
+                    }
                     currentChapterId = null;
-                    
-                    // 更新章节列表，会自动选择第一章
                     updateChapterList();
-                    
-                    // 禁用刷新按钮
                     refreshBtn.setEnabled(false);
                 }
             } catch (Exception e) {
@@ -509,6 +640,10 @@ public class PrivateReaderPanel extends JPanel {
                         "加载上次阅读章节失败：" + e.getMessage(),
                         "错误"
                 );
+            } finally {
+                isLoadingLastChapter = false;
+                // 重新设置监听器
+                setupChapterListListener();
             }
         } else {
             LOG.warn("无法加载上次阅读章节：未选择书籍");
@@ -668,7 +803,19 @@ public class PrivateReaderPanel extends JPanel {
                 if (e.getClickCount() == 2) {
                     Book selectedBook = bookList.getSelectedValue();
                     if (selectedBook != null) {
-                        loadLastReadChapter();
+                        // 禁用书籍列表监听器，避免重复通知
+                        disableBookListListener();
+                        try {
+                            // 如果双击的是当前书籍，且已经有章节被选中，则不重新加载
+                            if (currentChapterId != null && selectedBook.getLastReadChapterId() != null 
+                                && selectedBook.getLastReadChapterId().equals(currentChapterId)) {
+                                return;
+                            }
+                            loadLastReadChapter();
+                        } finally {
+                            // 重新启用书籍列表监听器
+                            enableBookListListener();
+                        }
                     }
                 }
             }
@@ -707,7 +854,6 @@ public class PrivateReaderPanel extends JPanel {
         if (selectedBook != null) {
             String message = String.format("更新章节列表 - 书籍: %s", selectedBook.getTitle());
             LOG.info(message);
-            showNotification(message, NotificationType.INFORMATION);
 
             try {
                 selectedBook.setProject(project);
@@ -718,22 +864,23 @@ public class PrivateReaderPanel extends JPanel {
                     if (chapters == null || chapters.isEmpty()) {
                         LOG.info("章节缓存不存在或为空，开始获取章节列表");
                         chapters = parser.getChapterList(selectedBook);
-                        // 过滤掉无效的章节
                         chapters = chapters.stream()
                                 .filter(chapter -> chapter != null && !chapter.url().isEmpty())
                                 .toList();
                         selectedBook.setCachedChapters(chapters);
-                        // 更新存储
                         project.getService(BookStorage.class).updateBook(selectedBook);
                         message = String.format("成功获取章节列表 - 章节数: %d", chapters.size());
                         LOG.info(message);
-                        showNotification(message, NotificationType.INFORMATION);
                     } else {
                         message = String.format("使用缓存的章节列表 - 章节数: %d", chapters.size());
                         LOG.info(message);
-                        showNotification(message, NotificationType.INFORMATION);
                     }
 
+                    // 移除监听器
+                    if (chapterListListener != null) {
+                        chapterList.removeListSelectionListener(chapterListListener);
+                    }
+                    
                     chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
 
                     // 选中当前阅读的章节
@@ -748,28 +895,15 @@ public class PrivateReaderPanel extends JPanel {
                             }
                         }
                     } else {
-                        // 如果没有上次阅读的章节，选择第一章并清空内容区域
-                        LOG.info("没有上次阅读的章节记录，重置到第一章");
                         if (!chapters.isEmpty()) {
-                            // 不触发章节加载，只选中第一章
-                            chapterList.removeListSelectionListener(chapterList.getListSelectionListeners()[0]);
                             chapterList.setSelectedIndex(0);
                             chapterList.ensureIndexIsVisible(0);
-                            chapterList.addListSelectionListener(e -> {
-                                if (!e.getValueIsAdjusting()) {
-                                    NovelParser.Chapter selectedChapter = chapterList.getSelectedValue();
-                                    if (selectedChapter != null) {
-                                        loadChapter(selectedChapter);
-                                    }
-                                }
-                            });
-                            // 清空内容区域
-                            setContent("");
-                            // 重置当前章节ID
-                            currentChapterId = null;
-                            // 禁用刷新按钮
-                            refreshBtn.setEnabled(false);
                         }
+                    }
+                    
+                    // 只在非加载上次章节时添加监听器
+                    if (!isLoadingLastChapter) {
+                        setupChapterListListener();
                     }
                 } else {
                     String error = "无法创建解析器，请检查书籍URL是否正确";
@@ -785,24 +919,42 @@ public class PrivateReaderPanel extends JPanel {
             }
         } else {
             chapterList.setListData(new NovelParser.Chapter[0]);
-            // 清空内容区域
             setContent("");
-            // 重置当前章节ID
             currentChapterId = null;
-            // 禁用刷新按钮
             refreshBtn.setEnabled(false);
         }
     }
 
     /**
-     * 加载指定章节
-     * 获取章节内容并更新阅读进度
-     *
-     * @param chapter 要加载的章节信息
+     * 统一更新书籍进度和状态
      */
+    private void updateBookProgress(Book book, NovelParser.Chapter chapter, int chapterIndex) {
+        if (book == null || chapter == null) return;
+        
+        // 更新当前章节索引和总章节数
+        book.setCurrentChapterIndex(chapterIndex + 1);
+        book.setTotalChapters(chapterList.getModel().getSize());
+        
+        // 更新进度（只更新一次，这会同时更新存储）
+        progressManager.updateProgress(book, chapter.url(), chapter.title(), 0);
+        
+        // 更新进度显示
+        updateProgressInfo();
+        
+        // 更新导航按钮状态
+        prevChapterBtn.setEnabled(chapterIndex > 0);
+        nextChapterBtn.setEnabled(chapterIndex < chapterList.getModel().getSize() - 1);
+    }
+
     private void loadChapter(NovelParser.Chapter chapter) {
         Book selectedBook = bookList.getSelectedValue();
         if (selectedBook != null && chapter != null) {
+            // 如果是同一章节，不重复加载
+            if (currentChapterId != null && currentChapterId.equals(chapter.url())) {
+                LOG.debug("跳过加载相同章节: " + chapter.title());
+                return;
+            }
+
             String message = String.format("加载章节 - 书籍: %s, 章节: %s",
                     selectedBook.getTitle(), chapter.title());
             LOG.info(message);
@@ -829,33 +981,41 @@ public class PrivateReaderPanel extends JPanel {
                     throw new IllegalStateException(error);
                 }
 
+                // 获取当前章节索引
+                int currentIndex = chapterList.getSelectedIndex();
+                
+                // 先更新当前章节ID，避免重复通知
+                String oldChapterId = currentChapterId;
+                currentChapterId = chapter.url();
+                
+                // 更新进度（只在章节ID变化时更新）
+                if (oldChapterId == null || !oldChapterId.equals(chapter.url())) {
+                    // 更新当前章节索引和总章节数
+                    selectedBook.setCurrentChapterIndex(currentIndex + 1);
+                    selectedBook.setTotalChapters(chapterList.getModel().getSize());
+                    
+                    // 更新进度（这会同时更新存储）
+                    progressManager.updateProgress(selectedBook, chapter.url(), chapter.title(), 0);
+                    
+                    // 更新进度显示
+                    updateProgressInfo();
+                    
+                    // 更新导航按钮状态
+                    prevChapterBtn.setEnabled(currentIndex > 0);
+                    nextChapterBtn.setEnabled(currentIndex < chapterList.getModel().getSize() - 1);
+                }
+                
+                // 显示内容 - 确保在所有状态更新后才显示内容
                 if (isNotificationMode) {
+                    // 只有在章节ID变化时才清理通知
+                    if (oldChapterId == null || !oldChapterId.equals(chapter.url())) {
+                        clearAllNotifications();
+                    }
                     showChapterInNotification(selectedBook, chapter, content);
+                    setContent("已切换到通知栏阅读模式，请在左下角查看内容");
                 } else {
                     setContent(content);
                 }
-                currentChapterId = chapter.url();
-
-                // 更新当前章节索引和总章节数
-                int currentIndex = chapterList.getSelectedIndex();
-                selectedBook.setCurrentChapterIndex(currentIndex + 1); // 设置为1-based索引
-                selectedBook.setTotalChapters(chapterList.getModel().getSize());
-
-                // 更新阅读进度
-                progressManager.updateCurrentChapter(selectedBook, currentIndex);
-                updateReadingProgress(currentChapterId, chapter.title(), 0);
-
-                // 更新存储
-                project.getService(BookStorage.class).updateBook(selectedBook);
-
-                // 更新导航按钮状态
-                prevChapterBtn.setEnabled(currentIndex > 0);
-                nextChapterBtn.setEnabled(currentIndex < chapterList.getModel().getSize() - 1);
-
-                // 实时更新进度显示
-                updateProgressInfo();
-                // 通知书架对话框更新
-                project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
 
                 // 启用刷新按钮
                 refreshBtn.setEnabled(true);
@@ -886,27 +1046,39 @@ public class PrivateReaderPanel extends JPanel {
 
     public void loadChapter(NovelParser.Chapter chapter, int chapterIndex) {
         if (chapter != null) {
+            // 如果是同一章节，不重复加载
+            if (currentChapterId != null && currentChapterId.equals(chapter.url())) {
+                LOG.debug("跳过加载相同章节: " + chapter.title());
+                return;
+            }
+
             try {
                 Book selectedBook = bookList.getSelectedValue();
                 if (selectedBook != null) {
                     selectedBook.setProject(project);
                     NovelParser parser = selectedBook.getParser();
                     String content = parser.getChapterContent(chapter.url(), selectedBook);
-                    setContent(content);
-                    currentChapterId = chapter.url();
-
-                    // 更新阅读进度
-                    progressManager.updateCurrentChapter(selectedBook, chapterIndex);
-                    updateReadingProgress(currentChapterId, chapter.title(), 0);
-
-                    // 更新导航按钮状态
-                    prevChapterBtn.setEnabled(chapterIndex > 0);
-                    nextChapterBtn.setEnabled(chapterIndex < selectedBook.getTotalChapters() - 1);
                     
-                    // 实时更新进度显示
-                    updateProgressInfo();
-                    // 通知书架对话框更新
-                    project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(selectedBook);
+                    // 先更新当前章节ID，避免重复通知
+                    String oldChapterId = currentChapterId;
+                    currentChapterId = chapter.url();
+                    
+                    // 只在章节ID变化时更新进度
+                    if (oldChapterId == null || !oldChapterId.equals(chapter.url())) {
+                        // 统一更新进度和状态
+                        updateBookProgress(selectedBook, chapter, chapterIndex);
+                    }
+                    
+                    if (isNotificationMode) {
+                        // 只有在章节ID变化时才清理通知
+                        if (oldChapterId == null || !oldChapterId.equals(chapter.url())) {
+                            clearAllNotifications();
+                        }
+                        showChapterInNotification(selectedBook, chapter, content);
+                        setContent("已切换到通知栏阅读模式，请在左下角查看内容");
+                    } else {
+                        setContent(content);
+                    }
                     
                     // 启动后台预加载
                     project.getService(ChapterPreloader.class).preloadChapters(selectedBook, chapterIndex);
@@ -1013,12 +1185,8 @@ public class PrivateReaderPanel extends JPanel {
     }
 
     private void showChapterInNotification(Book book, NovelParser.Chapter chapter, String content) {
-        // 只在以下情况清理通知:
-        // 1. 切换章节时
-        // 2. 通知数量超过限制时
-        if (currentChapterId == null || !currentChapterId.equals(chapter.url())) {
-            clearAllNotifications();
-        } else if (activeNotifications.size() >= MAX_NOTIFICATIONS) {
+        // 如果通知数量超过限制，只保留最近的几条
+        if (activeNotifications.size() >= MAX_NOTIFICATIONS) {
             // 只保留最近的几条通知
             while (activeNotifications.size() > MAX_NOTIFICATIONS / 2) {
                 Notification oldNotification = activeNotifications.remove(0);
@@ -1045,10 +1213,15 @@ public class PrivateReaderPanel extends JPanel {
         int endIndex = Math.min(startIndex + pageSize, content.length());
         String pageContent = content.substring(startIndex, endIndex);
 
-        // 创建标题（包含页码信息）
-        String title = String.format("%s - %s", book.getTitle(), chapter.title());
-        if (settings.isShowPageNumber() && totalPages > 1) {
-            title += String.format(" (%d/%d)", currentPage, totalPages);
+        // 创建标题（只在第一页显示）
+        String title = "";
+        if (currentPage == 1) {
+            title = String.format("%s - %s", book.getTitle(), chapter.title());
+            if (settings.isShowPageNumber() && totalPages > 1) {
+                title += String.format(" (%d/%d)", currentPage, totalPages);
+            }
+        } else if (settings.isShowPageNumber() && totalPages > 1) {
+            title = String.format("(%d/%d)", currentPage, totalPages);
         }
 
         // 创建新的通知
@@ -1064,80 +1237,6 @@ public class PrivateReaderPanel extends JPanel {
             Notification oldNotification = activeNotifications.remove(0);
             oldNotification.expire();
         }
-
-        // 添加导航按钮
-        int currentChapterIndex = chapterList.getSelectedIndex();
-
-        // 上一页按钮
-        if (currentPage > 1 || currentChapterIndex > 0) {
-            currentNotification.addAction(new AnAction("上一页") {
-                @Override
-                public void actionPerformed(@NotNull AnActionEvent e) {
-                    if (currentPage > 1) {
-                        currentPage--;
-                        showChapterInNotification(book, chapter, currentContent);
-                    } else if (currentChapterIndex > 0) {
-                        // 跳转到上一章最后一页
-                        NovelParser.Chapter prevChapter = chapterList.getModel().getElementAt(currentChapterIndex - 1);
-                        try {
-                            String prevContent = book.getParser().getChapterContent(prevChapter.url(), book);
-                            int prevTotalPages = (int) Math.ceil((double) prevContent.length() / settings.getPageSize());
-                            currentPage = prevTotalPages;
-                            chapterList.setSelectedIndex(currentChapterIndex - 1);
-                        } catch (Exception ex) {
-                            LOG.error("获取上一章内容失败", ex);
-                        }
-                    }
-                }
-            });
-        }
-
-        // 下一页按钮
-        if (currentPage < totalPages || currentChapterIndex < chapterList.getModel().getSize() - 1) {
-            currentNotification.addAction(new AnAction("下一页") {
-                @Override
-                public void actionPerformed(@NotNull AnActionEvent e) {
-                    if (currentPage < totalPages) {
-                        currentPage++;
-                        showChapterInNotification(book, chapter, currentContent);
-                    } else if (currentChapterIndex < chapterList.getModel().getSize() - 1) {
-                        // 跳转到下一章第一页
-                        currentPage = 1;
-                        chapterList.setSelectedIndex(currentChapterIndex + 1);
-                    }
-                }
-            });
-        }
-
-        // 章节导航按钮
-        if (currentChapterIndex > 0) {
-            currentNotification.addAction(new AnAction("上一章") {
-                @Override
-                public void actionPerformed(@NotNull AnActionEvent e) {
-                    currentPage = 1; // 重置页码
-                    navigateChapter(-1);
-                }
-            });
-        }
-
-        if (currentChapterIndex < chapterList.getModel().getSize() - 1) {
-            currentNotification.addAction(new AnAction("下一章") {
-                @Override
-                public void actionPerformed(@NotNull AnActionEvent e) {
-                    currentPage = 1; // 重置页码
-                    navigateChapter(1);
-                }
-            });
-        }
-
-        // 添加切换回普通模式的按钮
-        currentNotification.addAction(new AnAction("返回普通模式") {
-            @Override
-            public void actionPerformed(@NotNull AnActionEvent e) {
-                toggleReadingMode();
-                currentNotification.expire();
-            }
-        });
 
         currentNotification.notify(project);
     }
@@ -1336,5 +1435,27 @@ public class PrivateReaderPanel extends JPanel {
         if (bookListListener != null) {
             bookList.addListSelectionListener(bookListListener);
         }
+    }
+
+    private void setupChapterListListener() {
+        // 移除所有现有监听器
+        for (ListSelectionListener listener : chapterList.getListSelectionListeners()) {
+            chapterList.removeListSelectionListener(listener);
+        }
+        
+        // 如果监听器不存在，创建新的
+        if (chapterListListener == null) {
+            chapterListListener = e -> {
+                if (!e.getValueIsAdjusting()) {
+                    NovelParser.Chapter selectedChapter = chapterList.getSelectedValue();
+                    if (selectedChapter != null) {
+                        loadChapter(selectedChapter);
+                    }
+                }
+            };
+        }
+        
+        // 添加监听器
+        chapterList.addListSelectionListener(chapterListListener);
     }
 } 
