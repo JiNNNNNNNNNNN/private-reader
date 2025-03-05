@@ -99,6 +99,7 @@ public class PrivateReaderPanel extends JPanel {
         // 从设置中获取阅读模式
         ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
         isNotificationMode = modeSettings.isNotificationMode();
+        LOG.info("初始化阅读模式: " + (isNotificationMode ? "通知栏" : "阅读器"));
 
         // 检查插件是否启用
         PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
@@ -113,7 +114,7 @@ public class PrivateReaderPanel extends JPanel {
         // 设置布局
         setLayout(new BorderLayout());
         setBorder(JBUI.Borders.empty(10));
-
+        
         // 注册设置变更监听
         ApplicationManager.getApplication()
                 .getMessageBus()
@@ -305,6 +306,11 @@ public class PrivateReaderPanel extends JPanel {
             
             // 设置选中的书籍
             bookList.setSelectedValue(lastBook, true);
+            
+            // 如果有上次阅读的章节，加载它
+            if (lastBook.getLastReadChapterId() != null && !lastBook.getLastReadChapterId().isEmpty()) {
+                loadLastReadChapter();
+            }
         }
     }
 
@@ -390,12 +396,21 @@ public class PrivateReaderPanel extends JPanel {
     }
 
     public void setContent(String content) {
-        LOG.debug("设置阅读内容，长度: " + (content != null ? content.length() : 0));
-        contentArea.setText(content);
-        contentArea.setCaretPosition(0);
-
-        // 应用字体设置
-        applyFontSettings();
+        LOG.info("设置阅读内容 - 长度: " + (content != null ? content.length() : 0));
+        if (content == null) {
+            LOG.error("内容为null");
+            return;
+        }
+        
+        try {
+            contentArea.setText(content);
+            contentArea.setCaretPosition(0);
+            LOG.info("内容设置成功，应用字体设置");
+            applyFontSettings();
+        } catch (Exception e) {
+            LOG.error("设置内容失败", e);
+            showNotification("设置内容失败: " + e.getMessage(), NotificationType.ERROR);
+        }
     }
 
     public void updateReadingProgress(String chapterId, String chapterTitle, int position) {
@@ -556,8 +571,10 @@ public class PrivateReaderPanel extends JPanel {
         toolBar.add(toggleLeftPanelButton);
 
         // 添加阅读模式切换按钮
-        toggleModeButton = new JButton(AllIcons.Actions.Preview);
-        styleIconButton(toggleModeButton, "当前：阅读器模式 (点击切换到通知栏模式)");
+        toggleModeButton = new JButton(isNotificationMode ? AllIcons.Actions.ShowReadAccess : AllIcons.Actions.PreviewDetails);
+        styleIconButton(toggleModeButton, isNotificationMode ? 
+            "当前：通知栏模式 (点击切换到阅读器模式)" : 
+            "当前：阅读器模式 (点击切换到通知栏模式)");
         toggleModeButton.addActionListener(e -> toggleReadingMode());
         toolBar.add(toggleModeButton);
 
@@ -869,8 +886,8 @@ public class PrivateReaderPanel extends JPanel {
             return;
         }
 
-        String message = String.format("加载章节 - 书籍: %s, 章节: %s",
-                selectedBook.getTitle(), chapter.title());
+        String message = String.format("加载章节 - 书籍: %s, 章节: %s, 当前模式: %s",
+                selectedBook.getTitle(), chapter.title(), isNotificationMode ? "通知栏" : "阅读器");
         LOG.info(message);
 
         String oldChapterId = currentChapterId;
@@ -892,13 +909,16 @@ public class PrivateReaderPanel extends JPanel {
             ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
             String content = cacheManager.getCachedContent(selectedBook.getId(), chapter.url());
             boolean isFromCache = content != null;
+            LOG.info("内容来源: " + (isFromCache ? "缓存" : "网络"));
 
             // 如果缓存不存在或已过期，再从网络获取
             if (!isFromCache) {
                 content = parser.getChapterContent(chapter.url(), selectedBook);
+                LOG.info("从网络获取内容，长度: " + (content != null ? content.length() : 0));
             }
 
             if (content == null || content.isEmpty()) {
+                LOG.error("章节内容为空");
                 showNotification("章节内容为空", NotificationType.ERROR);
                 return;
             }
@@ -931,9 +951,18 @@ public class PrivateReaderPanel extends JPanel {
                     totalPages = newTotalPages;
                 }
                 showChapterInNotification(selectedBook, chapter, content, !isFromCache && !isLoadingLastChapter);
-                setContent("已切换到通知栏阅读模式，请在左下角查看内容");
+                // 更新内容区域提示
+                setContent("当前正在使用通知栏模式");
             } else {
+                LOG.info("阅读器模式：设置内容，长度: " + content.length());
+                // 清理所有通知
+                clearAllNotifications();
+                // 直接设置内容到阅读区域
                 setContent(content);
+                // 更新阅读进度
+                if (!isFromCache && !isLoadingLastChapter) {
+                    progressManager.updateProgress(selectedBook, chapter.url(), chapter.title(), 0);
+                }
             }
 
             // 启用刷新按钮
@@ -1133,45 +1162,54 @@ public class PrivateReaderPanel extends JPanel {
         ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
         modeSettings.setNotificationMode(isNotificationMode);
         
+        // 更新按钮状态
+        updateToggleModeButton();
+        
+        // 获取当前状态
+        NovelParser.Chapter currentChapter = chapterList.getSelectedValue();
+        Book selectedBook = bookList.getSelectedValue();
+        
+        // 清理所有通知
+        clearAllNotifications();
+        
+        // 如果没有选中的章节或书籍，显示提示信息
+        if (currentChapter == null || selectedBook == null) {
+            setContent("请选择左侧书籍和章节开始阅读");
+            return;
+        }
+        
+        // 如果没有当前内容，重新加载章节
+        if (currentContent == null) {
+            loadChapter(currentChapter);
+            return;
+        }
+        
+        if (isNotificationMode) {
+            // 切换到通知栏模式
+            showChapterInNotification(selectedBook, currentChapter, currentContent, true);
+            setContent("当前正在使用通知栏模式");
+        } else {
+            // 切换到阅读器模式
+            setContent(currentContent);
+        }
+        
         // 通知设置变更
         ApplicationManager.getApplication()
                 .getMessageBus()
                 .syncPublisher(ReaderModeSettings.TOPIC)
                 .readerModeSettingsChanged();
-        
-        NovelParser.Chapter currentChapter = chapterList.getSelectedValue();
-        Book selectedBook = bookList.getSelectedValue();
-
-        // 更新按钮状态
-        updateToggleModeButton();
-        
+                
         // 显示模式切换通知
         String modeMessage = isNotificationMode ? "已切换到通知栏模式" : "已切换到阅读器模式";
         showNotification(modeMessage, NotificationType.INFORMATION);
-
-        if (isNotificationMode) {
-            // 不再重置页码
-            clearAllNotifications();
-            if (currentChapter != null && selectedBook != null) {
-                loadChapter(currentChapter);
-            }
-            contentArea.setText("已切换到通知栏阅读模式，请在左下角查看内容");
-        } else {
-            clearAllNotifications();
-            if (currentChapter != null && selectedBook != null && currentContent != null) {
-                setContent(currentContent);
-            } else if (currentChapter != null && selectedBook != null) {
-                loadChapter(currentChapter);
-            }
-        }
     }
 
     private void updateToggleModeButton() {
         if (isNotificationMode) {
-            toggleModeButton.setIcon(AllIcons.Actions.PreviewDetails);
+            toggleModeButton.setIcon(AllIcons.Actions.ShowReadAccess);
             toggleModeButton.setToolTipText("当前：通知栏模式 (点击切换到阅读器模式)");
         } else {
-            toggleModeButton.setIcon(AllIcons.Actions.Preview);
+            toggleModeButton.setIcon(AllIcons.Actions.PreviewDetails);
             toggleModeButton.setToolTipText("当前：阅读器模式 (点击切换到通知栏模式)");
         }
     }
@@ -1403,5 +1441,34 @@ public class PrivateReaderPanel extends JPanel {
         button.setBorder(JBUI.Borders.empty(4, 8));
         button.setBackground(UIManager.getColor("Tree.background"));
         button.setForeground(UIManager.getColor("Button.foreground"));
+    }
+
+    public void selectAndLoadChapter(NovelParser.Chapter chapter) {
+        if (chapter == null) return;
+        
+        // 暂时移除监听器避免重复加载
+        if (chapterListListener != null) {
+            chapterList.removeListSelectionListener(chapterListListener);
+        }
+        
+        try {
+            // 在列表中查找并选中章节
+            ListModel<NovelParser.Chapter> model = chapterList.getModel();
+            for (int i = 0; i < model.getSize(); i++) {
+                if (chapter.url().equals(model.getElementAt(i).url())) {
+                    chapterList.setSelectedIndex(i);
+                    chapterList.ensureIndexIsVisible(i);
+                    break;
+                }
+            }
+            
+            // 加载章节内容
+            loadChapter(chapter);
+        } finally {
+            // 恢复监听器
+            if (chapterListListener != null) {
+                chapterList.addListSelectionListener(chapterListListener);
+            }
+        }
     }
 } 

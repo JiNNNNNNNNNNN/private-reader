@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'com.lv.tool'
-version '1.0.0'
+version '1.1.0'
 
 repositories {
     mavenCentral()
@@ -36,7 +36,28 @@ patchPluginXml {
     sinceBuild = '241'
     untilBuild = '251.*'
     changeNotes = """
-      <h3>1.0.0</h3>
+      <h3>1.1.0 版本更新</h3>
+      <ul>
+        <li>功能优化：
+          <ul>
+            <li>优化阅读器界面</li>
+            <li>提升章节加载速度</li>
+            <li>改进缓存机制</li>
+          </ul>
+        </li>
+      </ul>
+      <h3>Version 1.1.0</h3>
+      <ul>
+        <li>Feature Improvements:
+          <ul>
+            <li>Enhanced reader interface</li>
+            <li>Improved chapter loading speed</li>
+            <li>Enhanced caching mechanism</li>
+          </ul>
+        </li>
+      </ul>
+      <br>
+      <h3>1.0.0 版本更新</h3>
       <ul>
         <li>首次发布</li>
         <li>基础功能实现：
@@ -53,6 +74,26 @@ patchPluginXml {
             <li>智能缓存系统</li>
             <li>后台预加载</li>
             <li>异步加载不阻塞</li>
+          </ul>
+        </li>
+      </ul>
+      <h3>Version 1.0.0</h3>
+      <ul>
+        <li>Initial Release</li>
+        <li>Basic Features:
+          <ul>
+            <li>Add and remove books</li>
+            <li>Reading progress save and sync</li>
+            <li>Chapter content cache and preload</li>
+            <li>Universal website smart parsing</li>
+            <li>Switch between reader mode and notification bar mode</li>
+          </ul>
+        </li>
+        <li>Performance Optimization:
+          <ul>
+            <li>Smart caching system</li>
+            <li>Background preloading</li>
+            <li>Asynchronous loading without blocking</li>
           </ul>
         </li>
       </ul>

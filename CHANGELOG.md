@@ -1,61 +1,68 @@
-# Changelog
+# Changelog 更新日志
+
+## [1.1.0] - 2025-03-05
+
+### 功能优化 | Feature Improvements
+- 优化阅读器界面 | Enhanced reader interface
+- 提升章节加载速度 | Improved chapter loading speed
+- 改进缓存机制 | Enhanced caching mechanism
 
 ## [1.0.0] - 2025-02-27
 
-### 新增
-- 基础功能实现
-  - 支持添加、移除书籍
-  - 支持阅读进度保存和同步
-  - 支持章节内容缓存和预加载
-  - 支持通用网站智能解析
-  - 支持阅读器模式和通知栏模式切换
-  - 支持章节内容刷新（忽略缓存）
-  - 支持书籍列表排序（按书名、进度、时间）
-  - 支持阅读进度实时更新
-  - 支持章节列表缓存
+### 新增功能 | New Features
+- 基础功能实现 | Basic Features Implementation
+  - 支持添加、移除书籍 | Add and remove books
+  - 支持阅读进度保存和同步 | Reading progress save and sync
+  - 支持章节内容缓存和预加载 | Chapter content cache and preload
+  - 支持通用网站智能解析 | Universal website smart parsing
+  - 支持阅读器模式和通知栏模式切换 | Switch between reader mode and notification bar mode
+  - 支持章节内容刷新（忽略缓存）| Refresh chapter content (ignore cache)
+  - 支持书籍列表排序（按书名、进度、时间）| Book list sorting (by name, progress, time)
+  - 支持阅读进度实时更新 | Real-time reading progress update
+  - 支持章节列表缓存 | Chapter list caching
 
-### 优化
-- UI 优化
-  - 优雅的阅读界面
-  - 合理的菜单布局
-  - 快捷键支持
-  - 清屏、翻页、刷新等快捷键
-  - 可折叠的侧边栏
-  - 自定义字体和大小
-  - 阅读进度实时显示
-  - 通知栏阅读模式优化
+### 界面优化 | UI Optimization
+- UI 优化 | UI Improvements
+  - 优雅的阅读界面 | Elegant reading interface
+  - 合理的菜单布局 | Reasonable menu layout
+  - 快捷键支持 | Keyboard shortcuts support
+  - 清屏、翻页、刷新等快捷键 | Shortcuts for clear screen, page turning, refresh
+  - 可折叠的侧边栏 | Collapsible sidebar
+  - 自定义字体和大小 | Custom font and size
+  - 阅读进度实时显示 | Real-time progress display
+  - 通知栏阅读模式优化 | Notification bar reading mode optimization
 
-### 存储优化
-- 分离存储方案
-  - 主索引文件：存储所有书籍的基本信息
-  - 书籍详情文件：每本书单独存储详细信息
-  - 章节缓存：分散存储减少内存占用
-  - LRU 缓存策略
-  - 定期清理过期缓存
+### 存储优化 | Storage Optimization
+- 分离存储方案 | Separated Storage Solution
+  - 主索引文件：存储所有书籍的基本信息 | Main index file: stores basic information of all books
+  - 书籍详情文件：每本书单独存储详细信息 | Book detail files: separate storage for each book's details
+  - 章节缓存：分散存储减少内存占用 | Chapter cache: distributed storage to reduce memory usage
+  - LRU 缓存策略 | LRU cache strategy
+  - 定期清理过期缓存 | Regular expired cache cleanup
 
-### 性能优化
-- 内存缓存优化
-  - 智能预加载机制
-  - 缓存大小限制
-  - 过期缓存自动清理
-  - 磁盘空间管理
-- 文件系统优化
-  - 安全的文件名处理
-  - 分散存储减少锁竞争
-  - 异步写入和预加载
-- 后台任务处理
-  - 章节预加载
-  - 缓存清理
-  - 存储同步
+### 性能优化 | Performance Optimization
+- 内存缓存优化 | Memory Cache Optimization
+  - 智能预加载机制 | Smart preloading mechanism
+  - 缓存大小限制 | Cache size limitation
+  - 过期缓存自动清理 | Automatic expired cache cleanup
+  - 磁盘空间管理 | Disk space management
+- 文件系统优化 | File System Optimization
+  - 安全的文件名处理 | Safe filename handling
+  - 分散存储减少锁竞争 | Distributed storage to reduce lock contention
+  - 异步写入和预加载 | Asynchronous writing and preloading
+- 后台任务处理 | Background Task Processing
+  - 章节预加载 | Chapter preloading
+  - 缓存清理 | Cache cleanup
+  - 存储同步 | Storage synchronization
 
-### 安全性
-- 文件名安全处理
-  - Unicode 规范化
-  - 非法字符过滤
-  - 长度限制处理
-  - Hash 处理保持可读性
-- 缓存目录权限控制
-- 异常处理和日志记录
-  - 详细的错误日志
-  - 优雅的降级处理
-  - 备用方案支持 
+### 安全性 | Security
+- 文件名安全处理 | Filename Security Handling
+  - Unicode 规范化 | Unicode normalization
+  - 非法字符过滤 | Illegal character filtering
+  - 长度限制处理 | Length limitation handling
+  - Hash 处理保持可读性 | Hash processing while maintaining readability
+- 缓存目录权限控制 | Cache directory permission control
+- 异常处理和日志记录 | Exception Handling and Logging
+  - 详细的错误日志 | Detailed error logs
+  - 优雅的降级处理 | Graceful degradation
+  - 备用方案支持 | Fallback solution support 
