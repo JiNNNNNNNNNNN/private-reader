@@ -29,7 +29,7 @@ import java.security.NoSuchAlgorithmException;
  * 提供统一的存储路径管理和存储操作接口
  */
 @Service(Service.Level.PROJECT)
-public class StorageManager {
+public final class StorageManager {
     private static final Logger LOG = Logger.getInstance(StorageManager.class);
     private static final int MAX_FILENAME_LENGTH = 255; // 大多数文件系统的限制
     private static final String HASH_ALGORITHM = "SHA-256";
@@ -44,8 +44,8 @@ public class StorageManager {
     public StorageManager(Project project) {
         this.project = project;
         
-        // 使用IDE配置目录下的private-reader目录作为基础存储路径
-        this.baseStoragePath = Path.of(PathManager.getConfigPath(), "private-reader");
+        // 使用用户主目录下的.private-reader目录作为基础存储路径
+        this.baseStoragePath = Path.of(System.getProperty("user.home"), ".private-reader");
         this.booksPath = baseStoragePath.resolve("books");
         this.cachePath = baseStoragePath.resolve("cache");
         this.settingsPath = baseStoragePath.resolve("settings");
@@ -53,6 +53,9 @@ public class StorageManager {
         
         // 创建存储目录结构
         createStorageDirectories();
+        
+        // 检查并执行数据迁移
+        migrateFromOldLocation();
     }
     
     /**
@@ -69,6 +72,77 @@ public class StorageManager {
         } catch (IOException e) {
             LOG.error("创建存储目录结构失败: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * 从旧的存储位置迁移数据
+     */
+    private void migrateFromOldLocation() {
+        try {
+            // 获取旧的存储路径（IDEA配置目录）
+            Path oldBasePath = Path.of(PathManager.getConfigPath(), "private-reader");
+            Path oldBooksPath = oldBasePath.resolve("books");
+            
+            // 如果旧目录存在且新目录为空，执行迁移
+            if (Files.exists(oldBooksPath) && !Files.exists(booksPath.resolve("index.json"))) {
+                LOG.info("检测到旧版本数据，开始迁移...");
+                
+                // 创建备份
+                String timestamp = String.valueOf(System.currentTimeMillis());
+                Path backupDir = backupPath.resolve("migration_backup_" + timestamp);
+                Files.createDirectories(backupDir);
+                
+                // 备份旧数据
+                if (Files.exists(oldBasePath)) {
+                    copyDirectory(oldBasePath, backupDir);
+                    LOG.info("已备份旧数据到: " + backupDir);
+                }
+                
+                // 复制书籍数据
+                if (Files.exists(oldBooksPath)) {
+                    copyDirectory(oldBooksPath, booksPath);
+                    LOG.info("已迁移书籍数据");
+                }
+                
+                // 复制缓存
+                Path oldCachePath = oldBasePath.resolve("cache");
+                if (Files.exists(oldCachePath)) {
+                    copyDirectory(oldCachePath, cachePath);
+                    LOG.info("已迁移缓存数据");
+                }
+                
+                // 复制设置
+                Path oldSettingsPath = oldBasePath.resolve("settings");
+                if (Files.exists(oldSettingsPath)) {
+                    copyDirectory(oldSettingsPath, settingsPath);
+                    LOG.info("已迁移设置数据");
+                }
+                
+                LOG.info("数据迁移完成");
+            }
+        } catch (Exception e) {
+            LOG.error("数据迁移失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 递归复制目录
+     */
+    private void copyDirectory(Path source, Path target) throws IOException {
+        Files.walk(source)
+            .forEach(sourcePath -> {
+                try {
+                    Path targetPath = target.resolve(source.relativize(sourcePath));
+                    if (Files.isDirectory(sourcePath)) {
+                        Files.createDirectories(targetPath);
+                    } else {
+                        Files.createDirectories(targetPath.getParent());
+                        Files.copy(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (IOException e) {
+                    LOG.error("复制文件失败: " + sourcePath + " -> " + target, e);
+                }
+            });
     }
     
     /**
@@ -140,7 +214,7 @@ public class StorageManager {
      */
     @NotNull
     public String getBooksFilePath() {
-        return booksPath.resolve("books.json").toString();
+        return booksPath.resolve("index.json").toString();
     }
     
     /**

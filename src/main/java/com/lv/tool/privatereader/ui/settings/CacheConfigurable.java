@@ -11,6 +11,7 @@ import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.components.labels.LinkLabel;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
@@ -20,6 +21,7 @@ import com.intellij.icons.AllIcons;
 import com.lv.tool.privatereader.storage.BookStorage;
 import com.lv.tool.privatereader.storage.StorageManager;
 import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
+import com.lv.tool.privatereader.settings.CacheSettings;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 

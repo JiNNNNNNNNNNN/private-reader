@@ -43,7 +43,9 @@ public class Book {
     /** 上次阅读位置（字符偏移量） */
     @Tag @Expose private int lastReadPosition;
     /** 上次阅读时间戳 */
-    @Tag @Expose private long lastReadTimeMillis;
+    @Tag("lastReadTimeMillis")
+    @Expose
+    private long lastReadTimeMillis = 0;
     /** 总章节数 */
     @Tag @Expose private int totalChapters;
     /** 当前阅读的章节索引 */
@@ -59,6 +61,10 @@ public class Book {
     @Transient private Project project;
     /** 书籍内容解析器 */
     @Transient private NovelParser parser;
+    /** 上次阅读页数 */
+    @Tag("lastReadPage")
+    @Expose
+    private int lastReadPage = 1;
 
     public Book() {
         this.lastReadPosition = 0;
@@ -170,11 +176,12 @@ public class Book {
         return (double) currentChapterIndex / totalChapters;
     }
 
-    public void updateReadingProgress(String chapterId, String chapterTitle, int position) {
+    public void updateReadingProgress(String chapterId, String chapterTitle, int position, int page) {
         this.lastReadChapterId = chapterId;
         this.lastReadChapter = chapterTitle;
         this.lastReadPosition = position;
         this.lastReadTimeMillis = System.currentTimeMillis();
+        this.lastReadPage = page;
     }
 
     @Override
@@ -244,5 +251,13 @@ public class Book {
 
     public void setCreateTimeMillis(long createTimeMillis) {
         this.createTimeMillis = createTimeMillis;
+    }
+
+    public int getLastReadPage() {
+        return lastReadPage;
+    }
+
+    public void setLastReadPage(int lastReadPage) {
+        this.lastReadPage = lastReadPage;
     }
 } 

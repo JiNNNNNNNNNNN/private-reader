@@ -26,16 +26,21 @@ public final class ReadingProgressManager {
      * 更新阅读进度
      */
     public void updateProgress(@NotNull Book book, String chapterId, String chapterTitle, int position) {
+        updateProgress(book, chapterId, chapterTitle, position, 1);
+    }
+
+    public void updateProgress(Book book, String chapterId, String chapterTitle, int position, int page) {
         if (book == null || chapterId == null) {
             LOG.warn("无法更新阅读进度：book 或 chapterId 为空");
             return;
         }
         
-        // 更新最后阅读信息
-        book.updateReadingProgress(chapterId, chapterTitle, position);
+        // 更新书籍进度
+        book.updateReadingProgress(chapterId, chapterTitle, position, page);
         
-        // 保存更新
-        project.getService(BookStorage.class).updateBook(book);
+        // 更新存储
+        BookStorage bookStorage = project.getService(BookStorage.class);
+        bookStorage.updateBook(book);
         
         // 发布更新事件
         project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
@@ -101,7 +106,7 @@ public final class ReadingProgressManager {
         }
         
         book.setCurrentChapterIndex(0);
-        book.updateReadingProgress("", "", 0);
+        book.updateReadingProgress("", "", 0, 1);
         
         // 保存更新
         project.getService(BookStorage.class).updateBook(book);

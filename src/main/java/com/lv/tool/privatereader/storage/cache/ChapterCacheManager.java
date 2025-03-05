@@ -3,8 +3,9 @@ package com.lv.tool.privatereader.storage.cache;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import com.lv.tool.privatereader.storage.StorageManager;
-import com.lv.tool.privatereader.ui.settings.CacheSettings;
+import com.lv.tool.privatereader.settings.CacheSettings;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -39,8 +40,8 @@ public final class ChapterCacheManager {
         this.project = project;
         this.storageManager = project.getService(StorageManager.class);
         this.cacheDir = Path.of(storageManager.getCachePath());
-        // 启动时执行一次缓存清理
-        cleanupCache();
+        // 不再在启动时清理缓存
+        // cleanupCache();
     }
 
     /**

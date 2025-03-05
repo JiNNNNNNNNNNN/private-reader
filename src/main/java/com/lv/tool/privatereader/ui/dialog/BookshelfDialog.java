@@ -15,6 +15,10 @@ import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import com.intellij.notification.NotificationType;
 import org.jetbrains.annotations.Nullable;
+import com.intellij.notification.NotificationGroupManager;
+import com.intellij.notification.Notification;
+import com.intellij.openapi.application.ApplicationManager;
+import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 
 import javax.swing.*;
 import java.awt.*;
@@ -215,10 +219,13 @@ public class BookshelfDialog extends DialogWrapper {
     }
 
     private void showNotification(String content, NotificationType type) {
-        com.intellij.notification.NotificationGroupManager.getInstance()
+        Notification notification = NotificationGroupManager.getInstance()
                 .getNotificationGroup(NOTIFICATION_GROUP_ID)
                 .createNotification(content, type)
-                .notify(project);
+                .setImportant(false);
+
+        notification.hideBalloon();
+        notification.notify(project);
     }
 
     private void openSelectedBook() {

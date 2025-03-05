@@ -12,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.intellij.util.xmlb.annotations.Tag;
 import com.intellij.util.xmlb.annotations.XCollection;
+import com.intellij.util.xmlb.annotations.Transient;
 import com.intellij.openapi.diagnostic.LogLevel;
 import com.intellij.openapi.project.Project;
 import com.google.gson.Gson;
@@ -71,12 +72,17 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
     @XCollection(style = XCollection.Style.v2)
     private List<Book> books = new ArrayList<>();
 
+    @Transient
     private Project project;
+    @Transient
     private Gson gson;
+    @Transient
     private final Path indexFilePath;
-    private final StorageManager storageManager;
+    @Transient
+    private StorageManager storageManager;
     
     // 内存缓存，使用LRU策略
+    @Transient
     private final Map<String, CacheEntry> bookCache = new LinkedHashMap<String, CacheEntry>(MAX_CACHE_SIZE, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
@@ -93,6 +99,11 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
             this.book = book;
             this.timestamp = System.currentTimeMillis();
         }
+    }
+
+    public BookStorage() {
+        this.indexFilePath = null;
+        this.storageManager = null;
     }
 
     public BookStorage(Project project) {
@@ -163,6 +174,7 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
                     out.name("totalChapters").value(book.getTotalChapters());
                     out.name("currentChapterIndex").value(book.getCurrentChapterIndex());
                     out.name("finished").value(book.isFinished());
+                    out.name("lastReadPage").value(book.getLastReadPage());
                     
                     // 手动序列化章节列表
                     List<Chapter> chapters = book.getCachedChapters();
@@ -228,6 +240,9 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
                                 break;
                             case "finished":
                                 book.setFinished(in.nextBoolean());
+                                break;
+                            case "lastReadPage":
+                                book.setLastReadPage(in.nextInt());
                                 break;
                             case "cachedChapters":
                                 if (in.peek() == com.google.gson.stream.JsonToken.NULL) {
@@ -333,36 +348,69 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
     public void loadState(@NotNull BookStorage state) {
         LOG.info("加载存储状态");
         
-        // 先尝试从JSON文件加载
-        loadBooks();
+        // 保存当前的 project 和 storageManager 引用
+        Project currentProject = this.project;
+        StorageManager currentStorageManager = this.storageManager;
         
-        // 如果JSON文件没有数据，再从XML加载
-        if (books == null || books.isEmpty()) {
-            LOG.info("从XML加载书籍数据");
+        // 复制状态
         XmlSerializerUtil.copyBean(state, this);
-        if (books == null) {
-            LOG.warn("加载的 books 列表为 null，创建新列表");
-            books = new ArrayList<>();
+        
+        // 恢复必要的字段
+        this.project = currentProject;
+        this.storageManager = currentStorageManager;
+        
+        // 确保必要的字段被初始化
+        if (project == null) {
+            LOG.warn("project 字段为 null，这可能会导致一些功能不可用");
         }
-            // 保存到JSON文件，确保两种存储方式同步
-            if (!books.isEmpty()) {
-                saveBookIndex();
-                
-                // 保存每本书的详细信息
-                for (Book book : books) {
-                    saveBookDetails(book);
-                }
-            }
+        
+        if (storageManager == null && project != null) {
+            this.storageManager = project.getService(StorageManager.class);
+        }
+        
+        if (gson == null) {
+            initializeGson();
+        }
+        
+        if (books == null) {
+            books = new ArrayList<>();
+            // 只在 books 为 null 时才从文件加载
+            loadBooks();
         }
         
         LOG.info("当前书籍数量: " + books.size());
     }
 
     /**
+     * 初始化Gson实例
+     */
+    private void initializeGson() {
+        this.gson = new GsonBuilder()
+            .setPrettyPrinting()
+            .disableJdkUnsafe()
+            .excludeFieldsWithoutExposeAnnotation()
+            .setExclusionStrategies(new ExclusionStrategy() {
+                @Override
+                public boolean shouldSkipField(FieldAttributes f) {
+                    return f.getName().equals("parser") || 
+                           f.getName().equals("project") ||
+                           f.getName().equals("cachedChapters");
+                }
+
+                @Override
+                public boolean shouldSkipClass(Class<?> clazz) {
+                    return false;
+                }
+            })
+            .create();
+    }
+
+    /**
      * 获取所有书籍
+     * @param loadDetails 是否加载详细信息
      * @return 书籍列表的副本
      */
-    public List<Book> getAllBooks() {
+    public List<Book> getAllBooks(boolean loadDetails) {
         cleanupIfNeeded();
         if (books == null) {
             LOG.warn("books 列表为 null，创建新列表");
@@ -371,15 +419,25 @@ public class BookStorage implements PersistentStateComponent<BookStorage> {
         LOG.debug("获取所有书籍，数量: " + books.size());
         
         // 确保所有书籍都已加载详细信息
-        for (int i = 0; i < books.size(); i++) {
-            Book book = books.get(i);
-            Book detailedBook = getBookDetails(book.getId());
-            if (detailedBook != null) {
-                books.set(i, detailedBook);
+        if (loadDetails) {
+            for (int i = 0; i < books.size(); i++) {
+                Book book = books.get(i);
+                Book detailedBook = getBookDetails(book.getId());
+                if (detailedBook != null) {
+                    books.set(i, detailedBook);
+                }
             }
         }
         
         return new ArrayList<>(books);
+    }
+
+    /**
+     * 获取所有书籍（包含详细信息）
+     * @return 书籍列表的副本
+     */
+    public List<Book> getAllBooks() {
+        return getAllBooks(true);
     }
 
     /**

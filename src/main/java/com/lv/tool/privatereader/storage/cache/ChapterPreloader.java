@@ -6,8 +6,8 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
+import com.lv.tool.privatereader.settings.CacheSettings;
 import com.lv.tool.privatereader.settings.PluginSettings;
-import com.lv.tool.privatereader.ui.settings.CacheSettings;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

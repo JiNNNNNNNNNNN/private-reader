@@ -19,7 +19,13 @@ public class PrivateReaderWindowFactory implements ToolWindowFactory, Disposable
     
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        readerPanel = new PrivateReaderPanel(project);
+        // 获取已经初始化的面板
+        readerPanel = PrivateReaderPanel.getInstance(project);
+        if (readerPanel == null) {
+            // 如果还没有初始化，创建新的面板
+            readerPanel = new PrivateReaderPanel(project);
+        }
+        
         Content content = ContentFactory.getInstance().createContent(readerPanel, "", false);
         content.setDisposer(this); // 设置资源释放器
         toolWindow.getContentManager().addContent(content);

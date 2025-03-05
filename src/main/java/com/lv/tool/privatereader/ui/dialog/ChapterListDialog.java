@@ -138,7 +138,7 @@ public class ChapterListDialog extends DialogWrapper {
                     panelChapterList.ensureIndexIsVisible(index);
                 }
                 // 然后加载章节
-                panel.loadChapter(selectedChapter, index);
+                panel.loadChapter(selectedChapter);
                 close(OK_EXIT_CODE);
             }
         }

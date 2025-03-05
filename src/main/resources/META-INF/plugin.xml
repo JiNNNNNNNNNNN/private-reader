@@ -83,14 +83,12 @@
   <depends>com.intellij.modules.platform</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="PrivateReader" anchor="right" 
-        factoryClass="com.lv.tool.privatereader.ui.PrivateReaderWindowFactory"/>
-    <projectService serviceImplementation="com.lv.tool.privatereader.storage.StorageManager"/>
+    <toolWindow id="PrivateReader" anchor="right" factoryClass="com.lv.tool.privatereader.ui.PrivateReaderWindowFactory"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.BookStorage"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheManager"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterPreloader"/>
-    <projectService serviceImplementation="com.lv.tool.privatereader.ui.settings.CacheSettings"/>
-    <projectService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
+    <projectService serviceImplementation="com.lv.tool.privatereader.settings.CacheSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.ReaderSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.PluginSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.NotificationReaderSettings"/>
@@ -143,8 +141,11 @@
     <applicationService serviceImplementation="com.intellij.openapi.diagnostic.Logger"/>
     <log.logger name="#com.lv.tool.privatereader" level="DEBUG"/>
     
-    <!-- 通知组配置 -->
-    <notificationGroup id="Private Reader" displayType="NONE" isLogByDefault="true"/>
+    <!-- 注册启动活动 -->
+    <postStartupActivity implementation="com.lv.tool.privatereader.startup.PrivateReaderStartupActivity"/>
+    
+    <!-- 注册通知组 -->
+    <notificationGroup id="Private Reader" displayType="NONE"/>
   </extensions>
 
   <actions>
