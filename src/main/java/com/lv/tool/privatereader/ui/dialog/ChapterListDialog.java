@@ -130,15 +130,8 @@ public class ChapterListDialog extends DialogWrapper {
             PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
             if (panel != null) {
                 panel.getBookList().setSelectedValue(book, true);
-                int index = chapterList.getSelectedIndex();
-                // 先设置章节列表选择
-                JBList<NovelParser.Chapter> panelChapterList = panel.getChapterList();
-                if (panelChapterList != null) {
-                    panelChapterList.setSelectedIndex(index);
-                    panelChapterList.ensureIndexIsVisible(index);
-                }
-                // 然后加载章节
-                panel.loadChapter(selectedChapter);
+                // 使用新的公共方法加载章节
+                panel.selectAndLoadChapter(selectedChapter);
                 close(OK_EXIT_CODE);
             }
         }

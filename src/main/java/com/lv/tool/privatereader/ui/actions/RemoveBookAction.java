@@ -2,11 +2,14 @@ package com.lv.tool.privatereader.ui.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.storage.BookStorage;
+import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 import org.jetbrains.annotations.NotNull;
 
@@ -15,44 +18,58 @@ import org.jetbrains.annotations.NotNull;
  */
 public class RemoveBookAction extends AnAction implements DumbAware {
     public RemoveBookAction() {
-        super("移除书籍", "从书架移除选中的书籍", null);
+        super("删除书籍", "从书架中删除选中的书籍", null);
     }
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
-        if (project == null) return;
-
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
-        if (readerPanel == null) {
-            Messages.showWarningDialog(project,
-                "阅读器窗口未初始化",
-                "提示");
+        if (project == null) {
             return;
         }
-
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
-        if (selectedBook == null) {
-            Messages.showWarningDialog(project,
-                "请先选择要移除的书籍",
-                "提示");
+        
+        // 获取阅读器面板
+        ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("PrivateReader");
+        if (toolWindow == null) {
             return;
         }
-
-        int result = Messages.showYesNoDialog(project,
-            String.format("确定要移除《%s》吗？", selectedBook.getTitle()),
-            "移除书籍",
-            Messages.getQuestionIcon());
-
-        if (result != Messages.YES) return;
-
-        BookStorage bookStorage = project.getService(BookStorage.class);
-        bookStorage.removeBook(selectedBook);
-        readerPanel.refresh();
-
-        Messages.showInfoMessage(project,
-            String.format("已移除《%s》", selectedBook.getTitle()),
-            "移除成功");
+        
+        // 确保工具窗口可见
+        toolWindow.show(() -> {
+            // 获取阅读器面板
+            PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
+            if (panel == null) {
+                return;
+            }
+            
+            // 获取选中的书籍
+            Book selectedBook = panel.getBookList().getSelectedValue();
+            if (selectedBook == null) {
+                Messages.showInfoMessage(project, "请先选择要删除的书籍", "提示");
+                return;
+            }
+            
+            // 确认删除
+            int result = Messages.showYesNoDialog(
+                    project,
+                    "确定要删除书籍 \"" + selectedBook.getTitle() + "\" 吗？",
+                    "删除确认",
+                    Messages.getQuestionIcon()
+            );
+            
+            if (result == Messages.YES) {
+                // 删除书籍
+                BookService bookService = project.getService(BookService.class);
+                boolean success = bookService.removeBook(selectedBook);
+                
+                if (success) {
+                    // 刷新面板
+                    panel.refresh();
+                } else {
+                    Messages.showErrorDialog(project, "删除书籍失败", "错误");
+                }
+            }
+        });
     }
 
     @Override
