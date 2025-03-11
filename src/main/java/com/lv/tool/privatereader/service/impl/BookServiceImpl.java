@@ -3,9 +3,10 @@ package com.lv.tool.privatereader.service.impl;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.repository.BookRepository;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.lv.tool.privatereader.service.BookService;
-import com.lv.tool.privatereader.storage.BookStorage;
-import com.lv.tool.privatereader.storage.ReadingProgressManager;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -15,62 +16,72 @@ import java.util.List;
  */
 public final class BookServiceImpl implements BookService {
     private static final Logger LOG = Logger.getInstance(BookServiceImpl.class);
-    private final BookStorage bookStorage;
-    private final ReadingProgressManager progressManager;
+    private final BookRepository bookRepository;
+    private final ReadingProgressRepository readingProgressRepository;
 
     public BookServiceImpl(Project project) {
         LOG.info("初始化BookServiceImpl");
-        this.bookStorage = project.getService(BookStorage.class);
-        this.progressManager = project.getService(ReadingProgressManager.class);
         
-        if (this.bookStorage == null || this.progressManager == null) {
-            LOG.error("BookStorage或ReadingProgressManager服务未初始化");
+        // 使用RepositoryModule获取Repository实例
+        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
+        if (repositoryModule != null) {
+            this.bookRepository = repositoryModule.getBookRepository();
+            this.readingProgressRepository = repositoryModule.getReadingProgressRepository();
+        } else {
+            LOG.error("RepositoryModule服务未初始化，尝试使用旧的存储服务");
+            // 兼容旧版本，使用旧的存储服务
+            this.bookRepository = null;
+            this.readingProgressRepository = null;
+        }
+        
+        if (this.bookRepository == null || this.readingProgressRepository == null) {
+            LOG.error("BookRepository或ReadingProgressRepository服务未初始化");
         }
     }
 
     @Override
     public List<Book> getAllBooks() {
-        if (bookStorage == null) {
-            LOG.error("BookStorage服务未初始化");
+        if (bookRepository == null) {
+            LOG.error("BookRepository服务未初始化");
             return List.of();
         }
-        return bookStorage.getAllBooks();
+        return bookRepository.getAllBooks();
     }
 
     @Override
     public boolean addBook(Book book) {
-        if (bookStorage == null) {
-            LOG.error("BookStorage服务未初始化");
+        if (bookRepository == null) {
+            LOG.error("BookRepository服务未初始化");
             return false;
         }
-        bookStorage.addBook(book);
+        bookRepository.addBook(book);
         return true;
     }
 
     @Override
     public boolean removeBook(Book book) {
-        if (bookStorage == null) {
-            LOG.error("BookStorage服务未初始化");
+        if (bookRepository == null) {
+            LOG.error("BookRepository服务未初始化");
             return false;
         }
-        bookStorage.removeBook(book);
+        bookRepository.removeBook(book);
         return true;
     }
 
     @Override
     public boolean updateBook(Book book) {
-        if (bookStorage == null) {
-            LOG.error("BookStorage服务未初始化");
+        if (bookRepository == null) {
+            LOG.error("BookRepository服务未初始化");
             return false;
         }
-        bookStorage.updateBook(book);
+        bookRepository.updateBook(book);
         return true;
     }
 
     @Override
     public Book getLastReadBook() {
-        if (bookStorage == null) {
-            LOG.error("BookStorage服务未初始化");
+        if (bookRepository == null) {
+            LOG.error("BookRepository服务未初始化");
             return null;
         }
         
@@ -87,8 +98,8 @@ public final class BookServiceImpl implements BookService {
 
     @Override
     public void saveReadingProgress(@NotNull Book book, String chapterId, int position) {
-        if (progressManager == null) {
-            LOG.error("ReadingProgressManager服务未初始化");
+        if (readingProgressRepository == null) {
+            LOG.error("ReadingProgressRepository服务未初始化");
             return;
         }
         
@@ -102,7 +113,7 @@ public final class BookServiceImpl implements BookService {
                     .orElse("");
         }
         
-        progressManager.updateProgress(book, chapterId, chapterTitle, position);
+        readingProgressRepository.updateProgress(book, chapterId, chapterTitle, position);
         book.setLastReadChapterId(chapterId);
         book.setLastReadTimeMillis(System.currentTimeMillis());
         updateBook(book);

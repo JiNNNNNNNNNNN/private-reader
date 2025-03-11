@@ -34,6 +34,9 @@ import org.jetbrains.annotations.NotNull;
 import com.lv.tool.privatereader.service.impl.BookServiceImpl;
 import com.lv.tool.privatereader.service.impl.ChapterServiceImpl;
 import com.lv.tool.privatereader.service.impl.NotificationServiceImpl;
+import com.lv.tool.privatereader.repository.BookRepository;
+import com.lv.tool.privatereader.repository.ChapterCacheRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 
 import javax.swing.*;
 import javax.swing.event.ListSelectionListener;
@@ -74,6 +77,9 @@ public class PrivateReaderPanel extends JPanel {
     private NotificationService notificationService;
     private PrivateReaderConfig config;
     private ReadingProgressManager progressManager;
+    private RepositoryModule repositoryModule;
+    private BookRepository bookRepository;
+    private ChapterCacheRepository chapterCacheRepository;
     
     private JButton prevChapterBtn;
     private JButton nextChapterBtn;
@@ -151,6 +157,18 @@ public class PrivateReaderPanel extends JPanel {
             this.config = project.getService(PrivateReaderConfig.class);
             this.progressManager = project.getService(ReadingProgressManager.class);
             
+            // 获取RepositoryModule
+            this.repositoryModule = project.getService(RepositoryModule.class);
+            if (this.repositoryModule != null) {
+                this.bookRepository = repositoryModule.getBookRepository();
+                this.chapterCacheRepository = repositoryModule.getChapterCacheRepository();
+                LOG.info("RepositoryModule: 已初始化");
+                LOG.info("BookRepository: " + (this.bookRepository != null ? "已初始化" : "未初始化"));
+                LOG.info("ChapterCacheRepository: " + (this.chapterCacheRepository != null ? "已初始化" : "未初始化"));
+            } else {
+                LOG.warn("RepositoryModule未初始化，将使用旧的存储服务");
+            }
+            
             // 记录服务初始化状态
             LOG.info("BookService: " + (this.bookService != null ? "已初始化" : "未初始化"));
             LOG.info("ChapterService: " + (this.chapterService != null ? "已初始化" : "未初始化"));
@@ -164,6 +182,9 @@ public class PrivateReaderPanel extends JPanel {
             this.notificationService = null;
             this.config = null;
             this.progressManager = null;
+            this.repositoryModule = null;
+            this.bookRepository = null;
+            this.chapterCacheRepository = null;
         }
         
         // 检查服务是否正确初始化
@@ -378,26 +399,7 @@ public class PrivateReaderPanel extends JPanel {
         });
 
         // 立即加载书籍列表和上次阅读的书籍
-        BookStorage bookStorage = project.getService(BookStorage.class);
-        List<Book> books = bookStorage.getAllBooks();
-        bookList.setListData(books.toArray(new Book[0]));
-
-        // 如果有书籍，立即加载章节列表
-        if (!books.isEmpty()) {
-            // 找到最后阅读的书籍
-            Book lastReadBook = books.stream()
-                    .filter(book -> book.getLastReadTimeMillis() > 0)
-                    .max((b1, b2) -> Long.compare(b1.getLastReadTimeMillis(), b2.getLastReadTimeMillis()))
-                    .orElse(books.get(0));  // 如果没有阅读记录，使用第一本书
-            
-            // 设置选中的书籍
-            bookList.setSelectedValue(lastReadBook, true);
-            
-            // 如果有上次阅读的章节，加载它
-            if (lastReadBook.getLastReadChapterId() != null && !lastReadBook.getLastReadChapterId().isEmpty()) {
-                loadLastReadChapter();
-            }
-        }
+        loadBooks();
     }
 
     public static PrivateReaderPanel getInstance(Project project) {
@@ -417,11 +419,10 @@ public class PrivateReaderPanel extends JPanel {
         }
         
         // 重新加载书籍列表
-        List<Book> books = bookService.getAllBooks();
-        bookList.setListData(books.toArray(new Book[0]));
+        loadBooks();
         
         // 更新章节列表
-            updateChapterList();
+        updateChapterList();
     }
 
     /**
@@ -587,42 +588,42 @@ public class PrivateReaderPanel extends JPanel {
             if (bookListListener != null) {
                 bookList.removeListSelectionListener(bookListListener);
             }
-                if (chapterListListener != null) {
-                    chapterList.removeListSelectionListener(chapterListListener);
-                }
-                
-                try {
+            if (chapterListListener != null) {
+                chapterList.removeListSelectionListener(chapterListListener);
+            }
+            
+            try {
                 // 选中最近阅读的书籍
                 bookList.setSelectedValue(lastReadBook, true);
-                        
-                        // 获取章节列表
+                
+                // 获取章节列表
                 List<NovelParser.Chapter> chapters = chapterService.getChapters(lastReadBook);
-                        
-                        // 更新章节列表
-                            chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
-                            
+                
+                // 更新章节列表
+                chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
+                
                 // 查找上次阅读的章节
                 String lastChapterId = lastReadBook.getLastReadChapterId();
                 if (lastChapterId != null && !lastChapterId.isEmpty()) {
-                            for (int i = 0; i < chapters.size(); i++) {
+                    for (int i = 0; i < chapters.size(); i++) {
                         if (chapters.get(i).url().equals(lastChapterId)) {
                             // 选中章节
-                                    chapterList.setSelectedIndex(i);
+                            chapterList.setSelectedIndex(i);
                             
                             // 直接加载章节内容，避免触发监听器
                             loadChapter(chapters.get(i));
-                                    break;
-                            }
+                            break;
                         }
                     }
-                } finally {
-                    // 恢复监听器
+                }
+            } finally {
+                // 恢复监听器
                 if (bookListListener != null) {
                     bookList.addListSelectionListener(bookListListener);
                 }
                 if (chapterListListener != null) {
                     chapterList.addListSelectionListener(chapterListListener);
-            }
+                }
             }
         } catch (Exception e) {
             // 处理异常
@@ -679,8 +680,7 @@ public class PrivateReaderPanel extends JPanel {
                 );
 
                 if (result == Messages.YES) {
-                    BookStorage bookStorage = project.getService(BookStorage.class);
-                    bookStorage.removeBook(selectedBook);
+                    removeBook();
                     refresh();
                 }
             }
@@ -722,7 +722,7 @@ public class PrivateReaderPanel extends JPanel {
                         List<NovelParser.Chapter> chapters = parser.getChapterList(selectedBook);
                         selectedBook.setCachedChapters(chapters);
                         // 更新存储
-                        project.getService(BookStorage.class).updateBook(selectedBook);
+                        updateBookInfo();
                         LOG.info(String.format("更新章节列表成功 - 书籍: %s, 章节数: %d",
                                 selectedBook.getTitle(), chapters.size()));
                         updateChapterList();
@@ -872,27 +872,27 @@ public class PrivateReaderPanel extends JPanel {
         
         try {
             // 暂时移除章节列表选择监听器，防止循环触发
-                    if (chapterListListener != null) {
-                        chapterList.removeListSelectionListener(chapterListListener);
-                    }
+            if (chapterListListener != null) {
+                chapterList.removeListSelectionListener(chapterListListener);
+            }
             
             // 获取章节列表
             List<NovelParser.Chapter> chapters = chapterService.getChapters(selectedBook);
-                    
-                    // 更新章节列表
-                    chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
+            
+            // 更新章节列表
+            chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
 
             // 更新进度信息
             updateProgressInfo();
             
             // 如果有上次阅读的章节，选中它
             if (selectedBook.getLastReadChapterId() != null && !selectedBook.getLastReadChapterId().isEmpty()) {
-                        for (int i = 0; i < chapters.size(); i++) {
+                for (int i = 0; i < chapters.size(); i++) {
                     if (chapters.get(i).url().equals(selectedBook.getLastReadChapterId())) {
-                                chapterList.setSelectedIndex(i);
-                                break;
-                            }
-                        }
+                        chapterList.setSelectedIndex(i);
+                        break;
+                    }
+                }
             }
             
             // 重新添加章节列表选择监听器
@@ -904,7 +904,7 @@ public class PrivateReaderPanel extends JPanel {
             LOG.error("加载章节列表失败", e);
             if (ExceptionHandler.class != null) {
                 ExceptionHandler.handle(project, e, "加载章节列表失败: " + e.getMessage());
-                } else {
+            } else {
                 setContent("加载章节列表失败: " + e.getMessage());
             }
             
@@ -1097,7 +1097,7 @@ public class PrivateReaderPanel extends JPanel {
                     List<NovelParser.Chapter> chapters = parser.getChapterList(selectedBook);
                     selectedBook.setCachedChapters(chapters);
                     // 更新存储
-                    project.getService(BookStorage.class).updateBook(selectedBook);
+                    updateBookInfo();
                     LOG.info(String.format("更新章节列表成功 - 书籍: %s, 章节数: %d",
                             selectedBook.getTitle(), chapters.size()));
                     updateChapterList();
@@ -1579,8 +1579,7 @@ public class PrivateReaderPanel extends JPanel {
                     String content = parser.parseChapterContent(currentChapter.url());
                     
                     // 更新缓存
-                    ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
-                    cacheManager.cacheContent(selectedBook.getId(), currentChapter.url(), content);
+                    cacheChapterContent(content);
                     
                     // 更新显示
                     if (isNotificationMode) {
@@ -1735,6 +1734,62 @@ public class PrivateReaderPanel extends JPanel {
         } finally {
             if (chapterListListener != null) {
                 chapterList.addListSelectionListener(chapterListListener);
+            }
+        }
+    }
+
+    private void loadBooks() {
+        List<Book> books;
+        if (bookRepository != null) {
+            books = bookRepository.getAllBooks();
+        } else {
+            BookStorage bookStorage = project.getService(BookStorage.class);
+            books = bookStorage.getAllBooks();
+        }
+        bookList.setListData(books.toArray(new Book[0]));
+    }
+
+    private void removeBook() {
+        Book selectedBook = bookList.getSelectedValue();
+        if (selectedBook != null) {
+            int result = Messages.showYesNoDialog(
+                    project,
+                    String.format("确定要移除《%s》吗？", selectedBook.getTitle()),
+                    "移除书籍",
+                    Messages.getQuestionIcon()
+            );
+
+            if (result == Messages.YES) {
+                if (bookRepository != null) {
+                    bookRepository.removeBook(selectedBook);
+                } else {
+                    BookStorage bookStorage = project.getService(BookStorage.class);
+                    bookStorage.removeBook(selectedBook);
+                }
+                refresh();
+            }
+        }
+    }
+
+    private void updateBookInfo() {
+        Book selectedBook = bookList.getSelectedValue();
+        if (selectedBook != null) {
+            if (bookRepository != null) {
+                bookRepository.updateBook(selectedBook);
+            } else {
+                project.getService(BookStorage.class).updateBook(selectedBook);
+            }
+        }
+    }
+
+    private void cacheChapterContent(String content) {
+        Book selectedBook = bookList.getSelectedValue();
+        if (selectedBook != null) {
+            if (chapterCacheRepository != null) {
+                chapterCacheRepository.cacheContent(selectedBook.getId(), currentChapterId, content);
+            } else {
+                ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
+                cacheManager.cacheContent(selectedBook.getId(), currentChapterId, content);
             }
         }
     }

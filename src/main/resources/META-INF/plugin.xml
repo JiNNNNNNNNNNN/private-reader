@@ -188,6 +188,10 @@
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheManager"/>
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterPreloader"/>
     
+    <!-- Repository Module -->
+    <projectService serviceImplementation="com.lv.tool.privatereader.repository.RepositoryModule"/>
+    
+    <!-- Services -->
     <projectService serviceInterface="com.lv.tool.privatereader.service.BookService" 
                    serviceImplementation="com.lv.tool.privatereader.service.impl.BookServiceImpl"/>
     <projectService serviceInterface="com.lv.tool.privatereader.service.ChapterService" 

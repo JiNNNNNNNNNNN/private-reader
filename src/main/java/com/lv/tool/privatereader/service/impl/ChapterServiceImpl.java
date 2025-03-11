@@ -5,8 +5,9 @@ import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.NovelParser.Chapter;
+import com.lv.tool.privatereader.repository.ChapterCacheRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.lv.tool.privatereader.service.ChapterService;
-import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -19,15 +20,24 @@ import java.util.concurrent.CompletableFuture;
 public final class ChapterServiceImpl implements ChapterService {
     private static final Logger LOG = Logger.getInstance(ChapterServiceImpl.class);
     private final Project project;
-    private final ChapterCacheManager cacheManager;
+    private final ChapterCacheRepository chapterCacheRepository;
 
     public ChapterServiceImpl(Project project) {
         LOG.info("初始化ChapterServiceImpl");
         this.project = project;
-        this.cacheManager = project.getService(ChapterCacheManager.class);
         
-        if (this.cacheManager == null) {
-            LOG.error("ChapterCacheManager服务未初始化");
+        // 使用RepositoryModule获取Repository实例
+        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
+        if (repositoryModule != null) {
+            this.chapterCacheRepository = repositoryModule.getChapterCacheRepository();
+        } else {
+            LOG.error("RepositoryModule服务未初始化，尝试使用旧的存储服务");
+            // 兼容旧版本，使用旧的存储服务
+            this.chapterCacheRepository = null;
+        }
+        
+        if (this.chapterCacheRepository == null) {
+            LOG.error("ChapterCacheRepository服务未初始化");
         }
     }
 
@@ -100,13 +110,13 @@ public final class ChapterServiceImpl implements ChapterService {
             book.setProject(project);
         }
         
-        if (cacheManager == null) {
-            LOG.error("ChapterCacheManager服务未初始化");
+        if (chapterCacheRepository == null) {
+            LOG.error("ChapterCacheRepository服务未初始化");
             return "无法刷新章节内容：缓存管理器未初始化";
         }
         
         // 清除缓存
-        cacheManager.clearCache(book.getId());
+        chapterCacheRepository.clearCache(book.getId());
         // 重新获取内容
         return getChapterContent(book, chapterId);
     }
@@ -178,4 +188,4 @@ public final class ChapterServiceImpl implements ChapterService {
         
         return null;
     }
-} 
+}

@@ -2,6 +2,8 @@ package com.lv.tool.privatereader.parser;
 
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.repository.ChapterCacheRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.jetbrains.annotations.NotNull;
@@ -67,10 +69,47 @@ public interface NovelParser {
             throw new IllegalStateException("Book project is not set");
         }
 
-        ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
+        // 尝试获取ChapterCacheRepository
+        ChapterCacheRepository cacheRepository = null;
+        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
+        if (repositoryModule != null) {
+            cacheRepository = repositoryModule.getChapterCacheRepository();
+        }
         
+        // 如果无法获取新的Repository，尝试使用旧的缓存管理器
+        if (cacheRepository == null) {
+            ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
+            if (cacheManager != null) {
+                // 使用旧的缓存管理器
+                String cachedContent = cacheManager.getCachedContent(book.getId(), chapterId);
+                if (cachedContent != null) {
+                    return cachedContent;
+                }
+                
+                try {
+                    String content = parseChapterContent(chapterId);
+                    cacheManager.cacheContent(book.getId(), chapterId, content);
+                    return content;
+                } catch (Exception e) {
+                    String fallbackContent = cacheManager.getFallbackCachedContent(book.getId(), chapterId);
+                    if (fallbackContent != null) {
+                        return fallbackContent;
+                    }
+                    return "章节内容暂时无法访问：" + e.getMessage();
+                }
+            } else {
+                // 如果连旧的缓存管理器也不可用，直接解析内容
+                try {
+                    return parseChapterContent(chapterId);
+                } catch (Exception e) {
+                    return "章节内容暂时无法访问：" + e.getMessage();
+                }
+            }
+        }
+        
+        // 使用新的ChapterCacheRepository
         // 优先尝试从缓存获取（只返回未过期的缓存）
-        String cachedContent = cacheManager.getCachedContent(book.getId(), chapterId);
+        String cachedContent = cacheRepository.getCachedContent(book.getId(), chapterId);
         
         // 如果缓存存在且未过期，直接返回缓存内容
         if (cachedContent != null) {
@@ -81,11 +120,11 @@ public interface NovelParser {
         try {
             String content = parseChapterContent(chapterId);
             // 更新缓存
-            cacheManager.cacheContent(book.getId(), chapterId, content);
+            cacheRepository.cacheContent(book.getId(), chapterId, content);
             return content;
         } catch (Exception e) {
             // 获取失败，尝试使用任何可用的缓存（即使已过期）
-            String fallbackContent = cacheManager.getFallbackCachedContent(book.getId(), chapterId);
+            String fallbackContent = cacheRepository.getFallbackCachedContent(book.getId(), chapterId);
             if (fallbackContent != null) {
                 return fallbackContent;
             }

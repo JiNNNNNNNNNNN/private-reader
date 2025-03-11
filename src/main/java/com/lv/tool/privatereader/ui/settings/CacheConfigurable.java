@@ -21,6 +21,9 @@ import com.intellij.icons.AllIcons;
 import com.lv.tool.privatereader.storage.BookStorage;
 import com.lv.tool.privatereader.storage.StorageManager;
 import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
+import com.lv.tool.privatereader.repository.BookRepository;
+import com.lv.tool.privatereader.repository.ChapterCacheRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
@@ -52,32 +55,32 @@ public class CacheConfigurable implements Configurable {
     private final CacheSettings settings;
 
     public CacheConfigurable() {
-        settings = new CacheSettings();
+        this.settings = ApplicationManager.getApplication().getService(CacheSettings.class);
     }
 
     @Nls(capitalization = Nls.Capitalization.Title)
     @Override
     public String getDisplayName() {
-        return "Private Reader Cache Settings";
+        return "Private Reader 缓存设置";
     }
 
     @Override
     public @Nullable JComponent createComponent() {
-        enableCacheCheckBox = new JBCheckBox("启用缓存");
+        enableCacheCheckBox = new JBCheckBox("启用章节缓存");
         
-        SpinnerNumberModel sizeModel = new SpinnerNumberModel(100, 10, 1000, 10);
+        SpinnerNumberModel sizeModel = new SpinnerNumberModel(100, 10, 10000, 10);
         maxCacheSizeSpinner = new JSpinner(sizeModel);
         
-        SpinnerNumberModel ageModel = new SpinnerNumberModel(7, 1, 30, 1);
+        SpinnerNumberModel ageModel = new SpinnerNumberModel(7, 1, 365, 1);
         maxCacheAgeSpinner = new JSpinner(ageModel);
         
         // 预加载设置
-        enablePreloadCheckBox = new JBCheckBox("启用章节预加载（后台自动缓存后续章节）");
+        enablePreloadCheckBox = new JBCheckBox("启用章节预加载");
         
-        SpinnerNumberModel countModel = new SpinnerNumberModel(50, 1, 100, 5);
+        SpinnerNumberModel countModel = new SpinnerNumberModel(3, 1, 10, 1);
         preloadCountSpinner = new JSpinner(countModel);
         
-        SpinnerNumberModel delayModel = new SpinnerNumberModel(1000, 500, 5000, 100);
+        SpinnerNumberModel delayModel = new SpinnerNumberModel(500, 100, 5000, 100);
         preloadDelaySpinner = new JSpinner(delayModel);
         
         // 获取存储管理器
@@ -104,23 +107,36 @@ public class CacheConfigurable implements Configurable {
         
         // 书架数据存储路径显示
         final String[] booksPathHolder = new String[1];
-        booksPathHolder[0] = "";
+        booksPathHolder[0] = "未知";
         
-        try {
+        if (openProjects.length > 0) {
             if (storageManager != null) {
                 booksPathHolder[0] = storageManager.getBooksFilePath();
                 LOG.info("从StorageManager获取书籍数据路径: " + booksPathHolder[0]);
-            } else if (openProjects.length > 0) {
-                BookStorage bookStorage = openProjects[0].getService(BookStorage.class);
-                booksPathHolder[0] = bookStorage.getBooksFilePath();
-                LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
             } else {
-                LOG.warn("无法获取书籍数据路径: 没有打开的项目");
-                booksPathHolder[0] = "未找到书籍数据路径 (无打开项目)";
+                // 尝试从RepositoryModule获取
+                RepositoryModule repositoryModule = openProjects[0].getService(RepositoryModule.class);
+                if (repositoryModule != null) {
+                    BookRepository bookRepository = repositoryModule.getBookRepository();
+                    if (bookRepository != null) {
+                        // BookRepository可能没有直接获取文件路径的方法，使用其他方式获取
+                        booksPathHolder[0] = storageManager != null ? 
+                            storageManager.getBooksFilePath() : 
+                            openProjects[0].getService(BookStorage.class).getBooksFilePath();
+                        LOG.info("获取书籍数据路径: " + booksPathHolder[0]);
+                    } else {
+                        // 回退到旧的实现
+                        BookStorage bookStorage = openProjects[0].getService(BookStorage.class);
+                        booksPathHolder[0] = bookStorage.getBooksFilePath();
+                        LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
+                    }
+                } else {
+                    // 回退到旧的实现
+                    BookStorage bookStorage = openProjects[0].getService(BookStorage.class);
+                    booksPathHolder[0] = bookStorage.getBooksFilePath();
+                    LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
+                }
             }
-        } catch (Exception e) {
-            LOG.error("获取书籍数据路径失败: " + e.getMessage(), e);
-            booksPathHolder[0] = "获取书籍数据路径失败: " + e.getMessage();
         }
         
         // 检查书籍数据文件是否存在
@@ -139,14 +155,10 @@ public class CacheConfigurable implements Configurable {
         LinkLabel<String> openBooksLink = new LinkLabel<>("打开书籍数据目录", null);
         openBooksLink.setListener((source, data) -> {
             try {
-                File booksDir = new File(booksPathHolder[0]).getParentFile();
-                if (booksDir != null && !booksDir.exists()) {
-                    booksDir.mkdirs();
-                }
-                if (booksDir != null && booksDir.exists()) {
-                    openDirectory(booksDir);
+                if (booksFileExists) {
+                    openDirectory(booksFile.getParentFile());
                 } else {
-                    Messages.showErrorDialog("无法打开书籍数据目录: 目录不存在", "错误");
+                    Messages.showWarningDialog("书籍数据文件不存在", "警告");
                 }
             } catch (Exception e) {
                 LOG.error("打开书籍数据目录失败: " + e.getMessage(), e);
@@ -174,6 +186,18 @@ public class CacheConfigurable implements Configurable {
                 try {
                     Project[] projects = ProjectManager.getInstance().getOpenProjects();
                     if (projects.length > 0) {
+                        // 尝试使用Repository接口
+                        RepositoryModule repositoryModule = projects[0].getService(RepositoryModule.class);
+                        if (repositoryModule != null) {
+                            ChapterCacheRepository cacheRepository = repositoryModule.getChapterCacheRepository();
+                            if (cacheRepository != null) {
+                                cacheRepository.clearAllCache();
+                                Messages.showInfoMessage("缓存已清理完成", "清理缓存");
+                                return;
+                            }
+                        }
+                        
+                        // 回退到旧的实现
                         ChapterCacheManager cacheManager = projects[0].getService(ChapterCacheManager.class);
                         cacheManager.clearAllCache();
                         Messages.showInfoMessage("缓存已清理完成", "清理缓存");

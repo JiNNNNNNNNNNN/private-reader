@@ -19,6 +19,8 @@ import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.Notification;
 import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
+import com.lv.tool.privatereader.repository.BookRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 
 import javax.swing.*;
 import java.awt.*;
@@ -32,6 +34,8 @@ public class BookshelfDialog extends DialogWrapper {
     private final Project project;
     private final JBList<Book> bookList;
     private final BookStorage bookStorage;
+    private final RepositoryModule repositoryModule;
+    private final BookRepository bookRepository;
     private JPanel mainPanel;
     private JComboBox<String> sortComboBox;
     private static final String NOTIFICATION_GROUP_ID = "Private Reader";
@@ -40,6 +44,15 @@ public class BookshelfDialog extends DialogWrapper {
         super(project);
         this.project = project;
         this.bookStorage = project.getService(BookStorage.class);
+        
+        // 获取RepositoryModule
+        this.repositoryModule = project.getService(RepositoryModule.class);
+        if (this.repositoryModule != null) {
+            this.bookRepository = repositoryModule.getBookRepository();
+        } else {
+            this.bookRepository = null;
+        }
+        
         this.bookList = new JBList<>();
         
         // 订阅书籍更新事件
@@ -105,7 +118,7 @@ public class BookshelfDialog extends DialogWrapper {
                         List<NovelParser.Chapter> chapters = parser.getChapterList(selectedBook);
                         selectedBook.setCachedChapters(chapters);
                         // 更新存储
-                        project.getService(BookStorage.class).updateBook(selectedBook);
+                        updateBookInfo(selectedBook);
                         refreshBookList();
                         showNotification(
                             String.format("成功刷新章节列表，共 %d 章", chapters.size()),
@@ -157,7 +170,7 @@ public class BookshelfDialog extends DialogWrapper {
                     ChapterPreloader preloader = project.getService(ChapterPreloader.class);
                     preloader.stopPreload(selectedBook.getId());
                     // 删除书籍
-                    bookStorage.removeBook(selectedBook);
+                    removeBook(selectedBook);
                     // 刷新书架对话框
                     refreshBookList();
                     // 刷新阅读面板
@@ -174,7 +187,7 @@ public class BookshelfDialog extends DialogWrapper {
     }
 
     private void refreshBookList() {
-        List<Book> books = bookStorage.getAllBooks();
+        List<Book> books = getAllBooks();
         bookList.setCellRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
@@ -194,7 +207,7 @@ public class BookshelfDialog extends DialogWrapper {
     }
 
     private void sortBooks() {
-        List<Book> books = bookStorage.getAllBooks();
+        List<Book> books = getAllBooks();
         int selectedIndex = sortComboBox.getSelectedIndex();
         
         switch (selectedIndex) {
@@ -255,7 +268,7 @@ public class BookshelfDialog extends DialogWrapper {
                                         selectedBook.setCurrentChapterIndex(i + 1); // 设置为1-based索引
                                         selectedBook.setTotalChapters(chapters.size());
                                         // 更新存储
-                                        bookStorage.updateBook(selectedBook);
+                                        updateBookInfo(selectedBook);
                                         break;
                                     }
                                 }
@@ -314,5 +327,29 @@ public class BookshelfDialog extends DialogWrapper {
     @Override
     protected void doOKAction() {
         openSelectedBook();
+    }
+
+    private void updateBookInfo(Book book) {
+        if (bookRepository != null) {
+            bookRepository.updateBook(book);
+        } else {
+            project.getService(BookStorage.class).updateBook(book);
+        }
+    }
+
+    private void removeBook(Book book) {
+        if (bookRepository != null) {
+            bookRepository.removeBook(book);
+        } else {
+            bookStorage.removeBook(book);
+        }
+    }
+
+    private List<Book> getAllBooks() {
+        if (bookRepository != null) {
+            return bookRepository.getAllBooks();
+        } else {
+            return bookStorage.getAllBooks();
+        }
     }
 } 

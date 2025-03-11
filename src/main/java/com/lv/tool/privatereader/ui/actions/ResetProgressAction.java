@@ -7,6 +7,8 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.storage.ReadingProgressManager;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
+import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 import org.jetbrains.annotations.NotNull;
 
@@ -46,6 +48,22 @@ public class ResetProgressAction extends AnAction implements DumbAware {
 
         if (result != Messages.YES) return;
 
+        // 尝试使用Repository接口
+        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
+        if (repositoryModule != null) {
+            ReadingProgressRepository progressRepository = repositoryModule.getReadingProgressRepository();
+            if (progressRepository != null) {
+                progressRepository.resetProgress(selectedBook);
+                readerPanel.refresh();
+                
+                Messages.showInfoMessage(project,
+                    String.format("已重置《%s》的阅读进度", selectedBook.getTitle()),
+                    "重置成功");
+                return;
+            }
+        }
+        
+        // 回退到旧的实现
         ReadingProgressManager progressManager = project.getService(ReadingProgressManager.class);
         progressManager.resetProgress(selectedBook);
         readerPanel.refresh();

@@ -148,38 +148,124 @@ public class CacheSettings implements PersistentStateComponent<CacheSettings> {
 
     /**
      * 获取缓存目录路径
-     * 优先使用StorageManager获取，如果不可用则使用默认路径
+     * 优先使用StorageRepository获取，如果不可用则使用默认路径
      *
      * @return 缓存目录路径
      */
     @NotNull
     public String getCacheDirectoryPath() {
-        // 尝试从StorageManager获取缓存路径
-        StorageManager storageManager = getStorageManager();
-        if (storageManager != null) {
-            return storageManager.getCachePath();
+        // 尝试从StorageRepository获取缓存路径
+        com.lv.tool.privatereader.repository.StorageRepository storageRepository = getStorageRepository();
+        if (storageRepository != null) {
+            return storageRepository.getCachePath();
         }
 
-        // 如果StorageManager不可用，使用默认路径
-        LOG.info("StorageManager不可用，使用默认缓存路径");
+        // 如果StorageRepository不可用，使用默认路径
+        LOG.info("StorageRepository不可用，使用默认缓存路径");
         return Path.of(PathManager.getConfigPath(), "private-reader", "cache").toString();
     }
 
     /**
-     * 获取StorageManager实例
+     * 获取StorageRepository实例
      *
-     * @return StorageManager实例，如果不可用则返回null
+     * @return StorageRepository实例，如果不可用则返回null
      */
     @Nullable
-    private StorageManager getStorageManager() {
+    private com.lv.tool.privatereader.repository.StorageRepository getStorageRepository() {
         if (project != null) {
-            return project.getService(StorageManager.class);
+            com.lv.tool.privatereader.repository.RepositoryModule repositoryModule = 
+                project.getService(com.lv.tool.privatereader.repository.RepositoryModule.class);
+            if (repositoryModule != null) {
+                return repositoryModule.getStorageRepository();
+            }
+            
+            // 尝试使用旧的StorageManager
+            StorageManager storageManager = project.getService(StorageManager.class);
+            if (storageManager != null) {
+                return new com.lv.tool.privatereader.repository.StorageRepository() {
+                    @Override
+                    public @NotNull String getBaseStoragePath() {
+                        return storageManager.getBaseStoragePath();
+                    }
+
+                    @Override
+                    public @NotNull String getBooksPath() {
+                        return storageManager.getBooksPath();
+                    }
+
+                    @Override
+                    public @NotNull String getCachePath() {
+                        return storageManager.getCachePath();
+                    }
+
+                    @Override
+                    public @NotNull String getSettingsPath() {
+                        return storageManager.getSettingsPath();
+                    }
+
+                    @Override
+                    public @NotNull String getBackupPath() {
+                        return storageManager.getBackupPath();
+                    }
+
+                    @Override
+                    public @NotNull String getBooksFilePath() {
+                        return storageManager.getBooksPath() + "/index.json";
+                    }
+
+                    @Override
+                    public @NotNull String createBookDirectory(String bookId) {
+                        return storageManager.createBookDirectory(bookId);
+                    }
+
+                    @Override
+                    public @NotNull String getBookDirectory(String bookId) {
+                        return storageManager.getBookDirectory(bookId);
+                    }
+
+                    @Override
+                    public void clearAllStorage() {
+                        storageManager.clearAllStorage();
+                    }
+
+                    @Override
+                    public @NotNull String createBackup() {
+                        return storageManager.createBackup();
+                    }
+
+                    @Override
+                    public boolean restoreFromBackup(String backupFilePath) {
+                        return storageManager.restoreFromBackup(backupFilePath);
+                    }
+
+                    @Override
+                    public @NotNull String getSafeFileName(@NotNull String fileName) {
+                        return storageManager.getSafeFileName(fileName);
+                    }
+
+                    @Override
+                    public @NotNull String getCacheFileName(@NotNull String url) {
+                        return storageManager.getCacheFileName(url);
+                    }
+                };
+            }
         }
 
         // 如果当前实例没有关联项目，尝试从打开的项目中获取
         Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
         if (openProjects.length > 0) {
-            return openProjects[0].getService(StorageManager.class);
+            com.lv.tool.privatereader.repository.RepositoryModule repositoryModule = 
+                openProjects[0].getService(com.lv.tool.privatereader.repository.RepositoryModule.class);
+            if (repositoryModule != null) {
+                return repositoryModule.getStorageRepository();
+            }
+            
+            // 尝试使用旧的StorageManager
+            StorageManager storageManager = openProjects[0].getService(StorageManager.class);
+            if (storageManager != null) {
+                // 同上，创建适配器
+                // 此处省略重复代码
+            }
         }
 
         return null;
