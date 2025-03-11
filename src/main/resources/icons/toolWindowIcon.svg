@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- 书本形状 - 使用 IDEA 推荐的蓝色 #389FD6 -->
+    <path d="M1 1V12C1 12.2761 1.22386 12.5 1.5 12.5H11.5C11.7761 12.5 12 12.2761 12 12V1C12 0.723858 11.7761 0.5 11.5 0.5H1.5C1.22386 0.5 1 0.723858 1 1Z" fill="#389FD6"/>
+    
+    <!-- 书页 -->
+    <path d="M1.5 1H11.5V12H1.5V1Z" fill="#FFFFFF"/>
+    
+    <!-- 书页纹理 - 简化为几条线 -->
+    <rect x="2.5" y="3" width="8" height="0.5" rx="0.25" fill="#6E6E6E" fill-opacity="0.6"/>
+    <rect x="2.5" y="5" width="8" height="0.5" rx="0.25" fill="#6E6E6E" fill-opacity="0.6"/>
+    <rect x="2.5" y="7" width="8" height="0.5" rx="0.25" fill="#6E6E6E" fill-opacity="0.6"/>
+    <rect x="2.5" y="9" width="5" height="0.5" rx="0.25" fill="#6E6E6E" fill-opacity="0.6"/>
+    
+    <!-- 书签 - 使用 IDEA 推荐的红色 #DB5860 -->
+    <path d="M9.5 1V3.5L8.5 2.5L7.5 3.5V1H9.5Z" fill="#DB5860"/>
+</svg> 

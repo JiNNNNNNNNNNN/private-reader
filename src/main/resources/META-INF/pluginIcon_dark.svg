@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- 书本形状 - 使用 IDEA 推荐的暗色主题蓝色 #3592C4 -->
+    <path d="M5 5V35C5 36.3807 6.11929 37.5 7.5 37.5H32.5C33.8807 37.5 35 36.3807 35 35V5C35 3.61929 33.8807 2.5 32.5 2.5H7.5C6.11929 2.5 5 3.61929 5 5Z" fill="#3592C4"/>
+    
+    <!-- 书页 -->
+    <path d="M7.5 5H32.5V35H7.5V5Z" fill="#2B2B2B"/>
+    
+    <!-- 书页纹理 - 简化为几条线，使用暗色主题灰色 #AFB1B3 -->
+    <rect x="10" y="10" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
+    <rect x="10" y="15" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
+    <rect x="10" y="20" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
+    <rect x="10" y="25" width="12.5" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
+    
+    <!-- 小锁图标（隐私）- 使用暗色主题灰色 -->
+    <rect x="17.5" y="27.5" width="5" height="5" rx="1" fill="#AFB1B3"/>
+    <path d="M16.25 27.5V25C16.25 23.6193 17.3693 22.5 18.75 22.5C20.1307 22.5 21.25 23.6193 21.25 25V27.5" stroke="#AFB1B3" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- 书签 - 使用 IDEA 推荐的暗色主题红色 #C75450 -->
+    <path d="M27.5 5V12.5L25 10L22.5 12.5V5H27.5Z" fill="#C75450"/>
+</svg> 

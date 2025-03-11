@@ -179,7 +179,7 @@
   <depends>com.intellij.modules.platform</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="PrivateReader" secondary="true" icon="AllIcons.Actions.MenuOpen" anchor="right"
+    <toolWindow id="PrivateReader" secondary="true" icon="com.lv.tool.privatereader.ui.PrivateReaderIcons.TOOL_WINDOW" anchor="right"
                 factoryClass="com.lv.tool.privatereader.ui.PrivateReaderWindowFactory"/>
     
     <projectService serviceImplementation="com.lv.tool.privatereader.storage.BookStorage"/>
