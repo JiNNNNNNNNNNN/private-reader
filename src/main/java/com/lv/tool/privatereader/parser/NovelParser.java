@@ -8,6 +8,8 @@ import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.jetbrains.annotations.NotNull;
 import com.google.gson.annotations.Expose;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
@@ -16,6 +18,9 @@ import java.util.Objects;
  * 小说解析器接口
  */
 public interface NovelParser {
+    // 定义LOG变量
+    Logger LOG = LoggerFactory.getLogger(NovelParser.class);
+    
     /**
      * 获取小说标题
      */
@@ -66,18 +71,27 @@ public interface NovelParser {
     default String getChapterContent(String chapterId, Book book) {
         Project project = book.getProject();
         if (project == null) {
-            throw new IllegalStateException("Book project is not set");
+            // 不再需要抛出异常，因为我们现在从应用级别获取服务
+            // 但为了兼容性，我们记录一个警告
+            System.out.println("警告: Book project 未设置，但将尝试从应用级别获取服务");
         }
 
-        // 尝试获取ChapterCacheRepository
+        // 如果应用级别实现的Cache可用，先检查缓存
         ChapterCacheRepository cacheRepository = null;
-        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
-        if (repositoryModule != null) {
-            cacheRepository = repositoryModule.getChapterCacheRepository();
+        
+        // 尝试从RepositoryModule获取
+        try {
+            RepositoryModule repositoryModule = RepositoryModule.getInstance();
+            if (repositoryModule != null) {
+                cacheRepository = repositoryModule.getChapterCacheRepository();
+            }
+        } catch (Exception e) {
+            LOG.debug("获取ChapterCacheRepository失败: " + e.getMessage());
         }
         
         // 如果无法获取新的Repository，尝试使用旧的缓存管理器
-        if (cacheRepository == null) {
+        if (cacheRepository == null && project != null) {
+            // 只有在 project 不为 null 时才尝试从项目级别获取服务
             ChapterCacheManager cacheManager = project.getService(ChapterCacheManager.class);
             if (cacheManager != null) {
                 // 使用旧的缓存管理器
@@ -104,6 +118,13 @@ public interface NovelParser {
                 } catch (Exception e) {
                     return "章节内容暂时无法访问：" + e.getMessage();
                 }
+            }
+        } else if (cacheRepository == null) {
+            // 如果无法获取任何缓存服务，直接解析内容
+            try {
+                return parseChapterContent(chapterId);
+            } catch (Exception e) {
+                return "章节内容暂时无法访问：" + e.getMessage();
             }
         }
         

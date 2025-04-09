@@ -1,8 +1,9 @@
 package com.lv.tool.privatereader.repository.impl;
 
-import com.intellij.openapi.components.Service;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
 import com.lv.tool.privatereader.repository.StorageRepository;
 import com.lv.tool.privatereader.settings.CacheSettings;
@@ -11,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -24,20 +26,44 @@ import java.util.stream.Stream;
  * 
  * 基于文件系统实现章节缓存仓库接口，管理章节内容的缓存。
  */
-@Service(Service.Level.PROJECT)
-public class FileChapterCacheRepository implements ChapterCacheRepository {
+@Singleton
+public final class FileChapterCacheRepository implements ChapterCacheRepository {
     private static final Logger LOG = Logger.getInstance(FileChapterCacheRepository.class);
     private static final long MAX_CACHE_AGE_MILLIS = TimeUnit.DAYS.toMillis(7); // 默认缓存7天
     private static final long MIN_FREE_SPACE_MB = 100; // 最小剩余空间(MB)
     
-    private final Project project;
     private final StorageRepository storageRepository;
     private final Path cacheDir;
     
-    public FileChapterCacheRepository(Project project, StorageRepository storageRepository) {
-        this.project = project;
+    /**
+     * 构造函数，用于 IntelliJ 服务系统
+     * 
+     * @param application Application 实例
+     */
+    public FileChapterCacheRepository(Application application) {
+        LOG.info("通过 Application 初始化 FileChapterCacheRepository");
+        this.storageRepository = application.getService(StorageRepository.class);
+        
+        if (storageRepository == null) {
+            LOG.error("StorageRepository 服务未初始化");
+            this.cacheDir = Path.of(System.getProperty("user.home"), ".private-reader", "cache");
+        } else {
+            this.cacheDir = Path.of(storageRepository.getCachePath());
+        }
+    }
+    
+    @Inject
+    public FileChapterCacheRepository(StorageRepository storageRepository) {
+        LOG.info("初始化应用级别的 FileChapterCacheRepository");
+        
         this.storageRepository = storageRepository;
-        this.cacheDir = Path.of(storageRepository.getCachePath());
+        
+        if (storageRepository == null) {
+            LOG.error("StorageRepository 服务未初始化");
+            this.cacheDir = Path.of(System.getProperty("user.home"), ".private-reader", "cache");
+        } else {
+            this.cacheDir = Path.of(storageRepository.getCachePath());
+        }
     }
     
     @Override
@@ -54,7 +80,7 @@ public class FileChapterCacheRepository implements ChapterCacheRepository {
                 // 不删除过期内容，只返回null表示需要重新获取
                 return null;
             }
-            return Files.readString(cachePath);
+            return Files.readString(cachePath, StandardCharsets.UTF_8);
         } catch (IOException e) {
             LOG.warn("读取缓存失败: " + cachePath + ", 错误: " + e.getMessage());
             return null;
@@ -70,7 +96,7 @@ public class FileChapterCacheRepository implements ChapterCacheRepository {
         if (!Files.exists(cachePath)) return null;
         
         try {
-            return Files.readString(cachePath);
+            return Files.readString(cachePath, StandardCharsets.UTF_8);
         } catch (IOException e) {
             LOG.warn("读取备用缓存失败: " + cachePath + ", 错误: " + e.getMessage());
             return null;
@@ -94,7 +120,7 @@ public class FileChapterCacheRepository implements ChapterCacheRepository {
             
             // 写入缓存文件
             Path cachePath = getCachePath(bookId, chapterId);
-            Files.writeString(cachePath, content);
+            Files.writeString(cachePath, content, StandardCharsets.UTF_8);
             
             LOG.debug("缓存章节内容: " + cachePath);
         } catch (IOException e) {
@@ -237,7 +263,7 @@ public class FileChapterCacheRepository implements ChapterCacheRepository {
      * 获取缓存最大有效期
      */
     private long getCacheMaxAge() {
-        CacheSettings settings = project.getService(CacheSettings.class);
+        CacheSettings settings = com.intellij.openapi.application.ApplicationManager.getApplication().getService(CacheSettings.class);
         if (settings != null) {
             return TimeUnit.DAYS.toMillis(settings.getMaxCacheAge());
         }
@@ -248,7 +274,7 @@ public class FileChapterCacheRepository implements ChapterCacheRepository {
      * 检查是否启用缓存
      */
     private boolean isCacheEnabled() {
-        CacheSettings settings = project.getService(CacheSettings.class);
+        CacheSettings settings = com.intellij.openapi.application.ApplicationManager.getApplication().getService(CacheSettings.class);
         return settings == null || settings.isEnableCache();
     }
     

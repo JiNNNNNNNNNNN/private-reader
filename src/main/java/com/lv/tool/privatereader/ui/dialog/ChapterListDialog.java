@@ -7,8 +7,14 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.service.ChapterService;
+import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Mono;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.intellij.openapi.ui.Messages;
 
 import javax.swing.*;
 import java.awt.*;
@@ -22,12 +28,16 @@ public class ChapterListDialog extends DialogWrapper {
     private final JBList<NovelParser.Chapter> chapterList;
     private JPanel mainPanel;
     private JLabel infoLabel;
+    private JProgressBar loadingProgress;
+    private final ChapterService chapterService;
+    private static final Logger LOG = LoggerFactory.getLogger(ChapterListDialog.class);
 
     public ChapterListDialog(Project project, Book book) {
         super(project);
         this.project = project;
         this.book = book;
         this.chapterList = new JBList<>();
+        this.chapterService = project.getService(ChapterService.class);
         
         init();
         setTitle("章节列表 - " + book.getTitle());
@@ -55,6 +65,12 @@ public class ChapterListDialog extends DialogWrapper {
         
         JBScrollPane scrollPane = new JBScrollPane(chapterList);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
+        
+        // 创建加载进度条
+        loadingProgress = new JProgressBar();
+        loadingProgress.setIndeterminate(true);
+        loadingProgress.setVisible(false);
+        mainPanel.add(loadingProgress, BorderLayout.SOUTH);
         
         // 加载章节
         loadChapters();
@@ -84,61 +100,98 @@ public class ChapterListDialog extends DialogWrapper {
     }
 
     private void loadChapters() {
-        List<NovelParser.Chapter> chapters = book.getCachedChapters();
-        if (chapters != null && !chapters.isEmpty()) {
-            chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
-            // 选中当前阅读的章节
-            String lastChapterId = book.getLastReadChapterId();
-            if (lastChapterId != null) {
-                for (int i = 0; i < chapters.size(); i++) {
-                    if (lastChapterId.equals(chapters.get(i).url())) {
-                        chapterList.setSelectedIndex(i);
-                        chapterList.ensureIndexIsVisible(i);
-                        break;
+        if (book == null || chapterService == null) {
+            chapterList.setListData(new NovelParser.Chapter[0]);
+            return;
+        }
+        
+        setLoading(true);
+        chapterService.getChapterList(book)
+            .publishOn(ReactiveSchedulers.getInstance().ui())
+            .subscribe(
+                chapters -> {
+                    chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
+                    // Try to select current chapter if provided
+                    String lastChapterId = book.getLastReadChapterId();
+                    if (lastChapterId != null) {
+                        for (int i = 0; i < chapters.size(); i++) {
+                            if (lastChapterId.equals(chapters.get(i).url())) {
+                                chapterList.setSelectedIndex(i);
+                                chapterList.ensureIndexIsVisible(i);
+                                break;
+                            }
+                        }
                     }
+                    updateInfoLabel(chapters);
+                    setLoading(false);
+                },
+                error -> {
+                    LOG.error("加载章节列表失败 for book: " + book.getTitle(), error);
+                    Messages.showErrorDialog(project, "加载章节列表失败: " + error.getMessage(), "错误");
+                    chapterList.setListData(new NovelParser.Chapter[0]);
+                    setLoading(false);
                 }
-            }
+            );
+    }
+
+    private void updateInfoLabel(List<NovelParser.Chapter> chapters) {
+        if (chapters != null && !chapters.isEmpty()) {
+            book.setTotalChapters(chapters.size());
+            infoLabel.setText(String.format("<html>书名：%s<br>作者：%s<br>进度：%d/%d 章 (%.1f%%)</html>",
+                book.getTitle(),
+                book.getAuthor(),
+                book.getCurrentChapterIndex(),
+                book.getTotalChapters(),
+                book.getReadingProgress() * 100));
         }
     }
 
     private void refreshChapters() {
-        try {
-            // 保存当前选中的位置
-            int selectedIndex = chapterList.getSelectedIndex();
-            
-            book.setProject(project);
-            NovelParser parser = book.getParser();
-            if (parser != null) {
-                List<NovelParser.Chapter> chapters = parser.getChapterList(book);
-                chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
-                
-                // 恢复选中位置
-                if (selectedIndex >= 0 && selectedIndex < chapters.size()) {
-                    chapterList.setSelectedIndex(selectedIndex);
-                    chapterList.ensureIndexIsVisible(selectedIndex);
+        setLoading(true);
+        chapterService.getChapterList(book)
+            .publishOn(ReactiveSchedulers.getInstance().ui())
+            .subscribe(
+                chapters -> {
+                    chapterList.setListData(chapters.toArray(new NovelParser.Chapter[0]));
+                    // Try to select current chapter if provided
+                    String lastChapterId = book.getLastReadChapterId();
+                    if (lastChapterId != null) {
+                        for (int i = 0; i < chapters.size(); i++) {
+                            if (lastChapterId.equals(chapters.get(i).url())) {
+                                chapterList.setSelectedIndex(i);
+                                chapterList.ensureIndexIsVisible(i);
+                                break;
+                            }
+                        }
+                    }
+                    updateInfoLabel(chapters);
+                    book.setCachedChapters(chapters);
+                    JOptionPane.showMessageDialog(mainPanel,
+                        String.format("成功刷新章节列表，共 %d 章", chapters.size()),
+                        "刷新成功",
+                        JOptionPane.INFORMATION_MESSAGE);
+                    setLoading(false);
+                },
+                error -> {
+                    LOG.error("刷新章节列表失败 for book: " + book.getTitle(), error);
+                    Messages.showErrorDialog(project, "刷新章节列表失败: " + error.getMessage(), "错误");
+                    chapterList.setListData(new NovelParser.Chapter[0]);
+                    setLoading(false);
                 }
-            }
-        } catch (Exception e) {
-            String error = "刷新章节列表失败: " + e.getMessage();
-            JOptionPane.showMessageDialog(mainPanel, error, "错误", JOptionPane.ERROR_MESSAGE);
-        }
+            );
     }
 
     private void openSelectedChapter() {
         NovelParser.Chapter selectedChapter = chapterList.getSelectedValue();
         if (selectedChapter != null) {
-            PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
-            if (panel != null) {
-                panel.getBookList().setSelectedValue(book, true);
-                // 使用新的公共方法加载章节
-                panel.selectAndLoadChapter(selectedChapter);
-                close(OK_EXIT_CODE);
-            }
+            close(OK_EXIT_CODE);
+            // 通知阅读器加载选中的章节
+            // 这里需要实现具体的加载逻辑
         }
     }
 
-    @Override
-    protected void doOKAction() {
-        openSelectedChapter();
+    private void setLoading(boolean loading) {
+        loadingProgress.setIndeterminate(loading);
+        loadingProgress.setVisible(loading);
     }
 } 

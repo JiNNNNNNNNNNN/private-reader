@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.ui.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
@@ -33,5 +34,12 @@ public class ClearScreenAction extends AnAction {
                 notification.notify(project);
             }
         }
+    }
+    
+    @Override
+    @NotNull
+    public ActionUpdateThread getActionUpdateThread() {
+        // 告诉 IntelliJ 在后台线程而非 EDT 线程中执行 update 方法
+        return ActionUpdateThread.BGT;
     }
 } 

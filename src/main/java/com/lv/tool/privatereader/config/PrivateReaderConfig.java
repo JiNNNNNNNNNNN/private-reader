@@ -1,8 +1,6 @@
 package com.lv.tool.privatereader.config;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.settings.PluginSettings;
@@ -13,10 +11,8 @@ import com.lv.tool.privatereader.settings.ReaderModeSettings;
  * 私人阅读器配置类
  * 集中管理所有配置项
  */
-@Service(Service.Level.PROJECT)
+@Service(Service.Level.APP)
 public final class PrivateReaderConfig {
-    private final Project project;
-    
     // 应用级别设置
     private final PluginSettings pluginSettings;
     private final ReaderSettings readerSettings;
@@ -24,15 +20,13 @@ public final class PrivateReaderConfig {
     private final NotificationReaderSettings notificationSettings;
     private final ReaderModeSettings modeSettings;
     
-    public PrivateReaderConfig(Project project) {
-        this.project = project;
-        
-        // 初始化应用级别设置
-        this.pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
-        this.readerSettings = ApplicationManager.getApplication().getService(ReaderSettings.class);
-        this.cacheSettings = project.getService(CacheSettings.class);
-        this.notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
-        this.modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+    public PrivateReaderConfig() {
+        // 直接使用ServiceLocator静态方法获取应用级别服务
+        this.pluginSettings = ServiceLocator.getApplicationService(PluginSettings.class);
+        this.readerSettings = ServiceLocator.getApplicationService(ReaderSettings.class);
+        this.cacheSettings = ServiceLocator.getApplicationService(CacheSettings.class);
+        this.notificationSettings = ServiceLocator.getApplicationService(NotificationReaderSettings.class);
+        this.modeSettings = ServiceLocator.getApplicationService(ReaderModeSettings.class);
     }
     
     /**

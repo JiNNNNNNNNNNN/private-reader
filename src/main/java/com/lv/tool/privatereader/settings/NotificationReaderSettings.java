@@ -1,47 +1,102 @@
 package com.lv.tool.privatereader.settings;
 
-import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.State;
-import com.intellij.openapi.components.Storage;
-import com.intellij.util.xmlb.XmlSerializerUtil;
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
+/**
+ * 通知阅读器设置
+ */
 @Service(Service.Level.APP)
-@State(
-    name = "NotificationReaderSettings",
-    storages = @Storage("private-reader-notification-settings.xml")
-)
-public final class NotificationReaderSettings implements PersistentStateComponent<NotificationReaderSettings> {
-    private static final int DEFAULT_PAGE_SIZE = 70;
+public class NotificationReaderSettings extends BaseSettings<NotificationReaderSettings> {
+    private static final Logger LOG = Logger.getInstance(NotificationReaderSettings.class);
     
-    private int pageSize = DEFAULT_PAGE_SIZE;
-    private boolean showPageNumber = true; // 是否显示页码
-
+    private boolean autoRead = true;
+    private int readIntervalSeconds = 5;
+    private boolean showUnreadCount = true;
+    private boolean markAsReadOnClose = true;
+    private int pageSize = 70;
+    private boolean showPageNumber = true;
+    
+    @Override
+    protected void copyFrom(NotificationReaderSettings source) {
+        this.autoRead = source.autoRead;
+        this.readIntervalSeconds = source.readIntervalSeconds;
+        this.showUnreadCount = source.showUnreadCount;
+        this.markAsReadOnClose = source.markAsReadOnClose;
+        this.pageSize = source.pageSize;
+        this.showPageNumber = source.showPageNumber;
+    }
+    
+    @Override
+    protected NotificationReaderSettings getDefault() {
+        NotificationReaderSettings settings = new NotificationReaderSettings();
+        settings.autoRead = true;
+        settings.readIntervalSeconds = 5;
+        settings.showUnreadCount = true;
+        settings.markAsReadOnClose = true;
+        settings.pageSize = 70;
+        settings.showPageNumber = true;
+        return settings;
+    }
+    
+    public boolean isAutoRead() {
+        ensureSettingsLoaded();
+        return autoRead;
+    }
+    
+    public void setAutoRead(boolean autoRead) {
+        this.autoRead = autoRead;
+        markDirty();
+    }
+    
+    public int getReadIntervalSeconds() {
+        ensureSettingsLoaded();
+        return readIntervalSeconds;
+    }
+    
+    public void setReadIntervalSeconds(int readIntervalSeconds) {
+        this.readIntervalSeconds = readIntervalSeconds;
+        markDirty();
+    }
+    
+    public boolean isShowUnreadCount() {
+        ensureSettingsLoaded();
+        return showUnreadCount;
+    }
+    
+    public void setShowUnreadCount(boolean showUnreadCount) {
+        this.showUnreadCount = showUnreadCount;
+        markDirty();
+    }
+    
+    public boolean isMarkAsReadOnClose() {
+        ensureSettingsLoaded();
+        return markAsReadOnClose;
+    }
+    
+    public void setMarkAsReadOnClose(boolean markAsReadOnClose) {
+        this.markAsReadOnClose = markAsReadOnClose;
+        markDirty();
+    }
+    
     public int getPageSize() {
+        ensureSettingsLoaded();
         return pageSize;
     }
-
+    
     public void setPageSize(int pageSize) {
         this.pageSize = pageSize;
+        markDirty();
     }
-
+    
     public boolean isShowPageNumber() {
+        ensureSettingsLoaded();
         return showPageNumber;
     }
-
+    
     public void setShowPageNumber(boolean showPageNumber) {
         this.showPageNumber = showPageNumber;
-    }
-
-    @Override
-    public @Nullable NotificationReaderSettings getState() {
-        return this;
-    }
-
-    @Override
-    public void loadState(@NotNull NotificationReaderSettings state) {
-        XmlSerializerUtil.copyBean(state, this);
+        markDirty();
     }
 } 

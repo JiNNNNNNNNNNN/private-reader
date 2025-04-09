@@ -25,3 +25,5 @@ Thumbs.db
 
 # Private Reader specific
 .private-reader/
+
+.vscode

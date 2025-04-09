@@ -1,9 +1,8 @@
 package com.lv.tool.privatereader.storage.cache;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import com.lv.tool.privatereader.storage.StorageManager;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import org.jetbrains.annotations.NotNull;
@@ -17,6 +16,7 @@ import java.util.stream.Stream;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 章节缓存管理器
@@ -27,18 +27,17 @@ import java.util.stream.Collectors;
  * - 清理过期缓存
  * - 管理缓存大小
  */
-@Service(Service.Level.PROJECT)
+@Service(Service.Level.APP)
 public final class ChapterCacheManager {
     private static final Logger LOG = Logger.getInstance(ChapterCacheManager.class);
-    private final Project project;
     private final Path cacheDir;
     private final StorageManager storageManager;
     private static final long MAX_CACHE_AGE_MILLIS = TimeUnit.DAYS.toMillis(7); // 默认缓存7天
     private static final long MIN_FREE_SPACE_MB = 100; // 最小剩余空间(MB)
 
-    public ChapterCacheManager(Project project) {
-        this.project = project;
-        this.storageManager = project.getService(StorageManager.class);
+    public ChapterCacheManager() {
+        LOG.info("初始化应用级别的 ChapterCacheManager");
+        this.storageManager = ApplicationManager.getApplication().getService(StorageManager.class);
         this.cacheDir = Path.of(storageManager.getCachePath());
         // 不再在启动时清理缓存
         // cleanupCache();
@@ -64,7 +63,7 @@ public final class ChapterCacheManager {
                 // 不删除过期内容，只返回null表示需要重新获取
                 return null;
             }
-            return Files.readString(cachePath);
+            return Files.readString(cachePath, StandardCharsets.UTF_8);
         } catch (IOException e) {
             LOG.warn("读取缓存失败: " + cachePath + ", 错误: " + e.getMessage());
             return null;
@@ -86,7 +85,7 @@ public final class ChapterCacheManager {
         if (!Files.exists(cachePath)) return null;
 
         try {
-            return Files.readString(cachePath);
+            return Files.readString(cachePath, StandardCharsets.UTF_8);
         } catch (IOException e) {
             LOG.warn("读取备用缓存失败: " + cachePath + ", 错误: " + e.getMessage());
             return null;
@@ -109,7 +108,7 @@ public final class ChapterCacheManager {
             // 写入新缓存
             Path cachePath = getCachePath(bookId, chapterId);
             Files.createDirectories(cachePath.getParent());
-            Files.writeString(cachePath, content);
+            Files.writeString(cachePath, content, StandardCharsets.UTF_8);
             LOG.debug("缓存内容已写入: " + cachePath);
         } catch (IOException e) {
             LOG.error("缓存内容写入失败: " + e.getMessage(), e);
@@ -253,7 +252,7 @@ public final class ChapterCacheManager {
      */
     @NotNull
     private CacheSettings getCacheSettings() {
-        return project.getService(CacheSettings.class);
+        return ApplicationManager.getApplication().getService(CacheSettings.class);
     }
 
     /**

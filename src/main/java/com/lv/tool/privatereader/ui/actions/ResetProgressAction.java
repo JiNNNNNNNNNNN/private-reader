@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.ui.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.ui.Messages;
@@ -49,7 +50,7 @@ public class ResetProgressAction extends AnAction implements DumbAware {
         if (result != Messages.YES) return;
 
         // 尝试使用Repository接口
-        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
+        RepositoryModule repositoryModule = RepositoryModule.getInstance();
         if (repositoryModule != null) {
             ReadingProgressRepository progressRepository = repositoryModule.getReadingProgressRepository();
             if (progressRepository != null) {
@@ -67,12 +68,19 @@ public class ResetProgressAction extends AnAction implements DumbAware {
         ReadingProgressManager progressManager = project.getService(ReadingProgressManager.class);
         progressManager.resetProgress(selectedBook);
         readerPanel.refresh();
-
+        
         Messages.showInfoMessage(project,
             String.format("已重置《%s》的阅读进度", selectedBook.getTitle()),
             "重置成功");
     }
-
+    
+    @Override
+    @NotNull
+    public ActionUpdateThread getActionUpdateThread() {
+        // 告诉 IntelliJ 在后台线程而非 EDT 线程中执行 update 方法
+        return ActionUpdateThread.BGT;
+    }
+    
     @Override
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -87,9 +95,7 @@ public class ResetProgressAction extends AnAction implements DumbAware {
             return;
         }
 
-        // 只有在有选中书籍且有阅读记录时才启用
         Book selectedBook = readerPanel.getBookList().getSelectedValue();
-        e.getPresentation().setEnabled(selectedBook != null && 
-            (selectedBook.getCurrentChapterIndex() > 0 || selectedBook.isFinished()));
+        e.getPresentation().setEnabled(selectedBook != null);
     }
 } 

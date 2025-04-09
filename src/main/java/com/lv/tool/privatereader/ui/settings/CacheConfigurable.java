@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.ui.settings;
 
 import com.intellij.ide.BrowserUtil;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
@@ -24,6 +25,7 @@ import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
 import com.lv.tool.privatereader.repository.RepositoryModule;
+import com.lv.tool.privatereader.repository.StorageRepository;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
@@ -115,24 +117,22 @@ public class CacheConfigurable implements Configurable {
                 LOG.info("从StorageManager获取书籍数据路径: " + booksPathHolder[0]);
             } else {
                 // 尝试从RepositoryModule获取
-                RepositoryModule repositoryModule = openProjects[0].getService(RepositoryModule.class);
+                RepositoryModule repositoryModule = RepositoryModule.getInstance();
                 if (repositoryModule != null) {
                     BookRepository bookRepository = repositoryModule.getBookRepository();
                     if (bookRepository != null) {
                         // BookRepository可能没有直接获取文件路径的方法，使用其他方式获取
-                        booksPathHolder[0] = storageManager != null ? 
-                            storageManager.getBooksFilePath() : 
-                            openProjects[0].getService(BookStorage.class).getBooksFilePath();
+                        booksPathHolder[0] = getBookDataPath();
                         LOG.info("获取书籍数据路径: " + booksPathHolder[0]);
                     } else {
                         // 回退到旧的实现
-                        BookStorage bookStorage = openProjects[0].getService(BookStorage.class);
+                        BookStorage bookStorage = ApplicationManager.getApplication().getService(BookStorage.class);
                         booksPathHolder[0] = bookStorage.getBooksFilePath();
                         LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
                     }
                 } else {
                     // 回退到旧的实现
-                    BookStorage bookStorage = openProjects[0].getService(BookStorage.class);
+                    BookStorage bookStorage = ApplicationManager.getApplication().getService(BookStorage.class);
                     booksPathHolder[0] = bookStorage.getBooksFilePath();
                     LOG.info("从BookStorage获取书籍数据路径: " + booksPathHolder[0]);
                 }
@@ -187,7 +187,7 @@ public class CacheConfigurable implements Configurable {
                     Project[] projects = ProjectManager.getInstance().getOpenProjects();
                     if (projects.length > 0) {
                         // 尝试使用Repository接口
-                        RepositoryModule repositoryModule = projects[0].getService(RepositoryModule.class);
+                        RepositoryModule repositoryModule = RepositoryModule.getInstance();
                         if (repositoryModule != null) {
                             ChapterCacheRepository cacheRepository = repositoryModule.getChapterCacheRepository();
                             if (cacheRepository != null) {
@@ -425,5 +425,31 @@ public class CacheConfigurable implements Configurable {
         label.setBorder(JBUI.Borders.empty(2));
         
         return label;
+    }
+
+    private String getBookDataPath() {
+        String defaultPath = new File(System.getProperty("user.home"), ".private-reader/books/index.json").getAbsolutePath();
+        try {
+            // 尝试从RepositoryModule获取
+            RepositoryModule repositoryModule = RepositoryModule.getInstance();
+            if (repositoryModule != null) {
+                StorageRepository storageRepository = repositoryModule.getStorageRepository();
+                if (storageRepository != null) {
+                    String path = storageRepository.getBooksFilePath();
+                    LOG.debug("从 StorageRepository 获取书籍数据路径: " + path);
+                    return path;
+                } else {
+                     LOG.warn("未能从 RepositoryModule 获取 StorageRepository");
+                }
+            } else {
+                 LOG.warn("未能获取 RepositoryModule 实例");
+            }
+        } catch (Exception e) {
+            LOG.error("从 RepositoryModule 获取书籍数据路径时出错: " + e.getMessage(), e);
+        }
+        
+        // 回退到默认路径
+        LOG.warn("无法通过 RepositoryModule 获取书籍数据路径，返回默认路径: " + defaultPath);
+        return defaultPath;
     }
 } 

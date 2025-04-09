@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.ui.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import org.jetbrains.annotations.NotNull;
@@ -26,6 +27,13 @@ public class AboutAction extends AnAction {
         if (project != null) {
             Messages.showInfoMessage(project, ABOUT_CONTENT, "关于 Private Reader");
         }
+    }
+    
+    @Override
+    @NotNull
+    public ActionUpdateThread getActionUpdateThread() {
+        // 告诉 IntelliJ 在后台线程而非 EDT 线程中执行 update 方法
+        return ActionUpdateThread.BGT;
     }
 
     @Override

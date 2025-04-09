@@ -1,8 +1,8 @@
 package com.lv.tool.privatereader.storage;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
@@ -20,27 +20,24 @@ import java.util.List;
  * 将旧的存储API适配到新的Repository接口，用于平滑过渡。
  * 这个类实现了旧的存储接口，但内部使用新的Repository实现。
  */
-@Service(Service.Level.PROJECT)
-public class StorageAdapter {
+@Service(Service.Level.APP)
+public final class StorageAdapter {
     private static final Logger LOG = Logger.getInstance(StorageAdapter.class);
     
-    private final Project project;
     private final StorageRepository storageRepository;
     private final BookRepository bookRepository;
     private final ReadingProgressRepository readingProgressRepository;
     private final ChapterCacheRepository chapterCacheRepository;
     
-    public StorageAdapter(Project project) {
-        this.project = project;
+    public StorageAdapter() {
+        LOG.info("初始化应用级别的 StorageAdapter");
         
-        // 获取Repository实例
-        RepositoryModule repositoryModule = project.getService(RepositoryModule.class);
+        // 获取应用级别的 Repository 实例
+        RepositoryModule repositoryModule = RepositoryModule.getInstance();
         this.storageRepository = repositoryModule.getStorageRepository();
         this.bookRepository = repositoryModule.getBookRepository();
         this.readingProgressRepository = repositoryModule.getReadingProgressRepository();
         this.chapterCacheRepository = repositoryModule.getChapterCacheRepository();
-        
-        LOG.info("初始化存储适配器");
     }
     
     // ===== StorageManager API =====

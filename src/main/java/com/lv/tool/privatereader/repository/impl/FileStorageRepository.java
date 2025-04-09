@@ -1,8 +1,9 @@
 package com.lv.tool.privatereader.repository.impl;
 
-import com.intellij.openapi.components.Service;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.repository.StorageRepository;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,27 +15,38 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.util.Base64;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 文件存储仓库实现
  * 
  * 基于文件系统实现存储仓库接口，管理应用的各种存储需求。
  */
-@Service(Service.Level.PROJECT)
-public class FileStorageRepository implements StorageRepository {
+@Singleton
+public final class FileStorageRepository implements StorageRepository {
     private static final Logger LOG = Logger.getInstance(FileStorageRepository.class);
     private static final int MAX_FILENAME_LENGTH = 255; // 大多数文件系统的限制
     private static final String HASH_ALGORITHM = "SHA-256";
     
-    private final Project project;
     private final Path baseStoragePath;
     private final Path booksPath;
     private final Path cachePath;
     private final Path settingsPath;
     private final Path backupPath;
     
-    public FileStorageRepository(Project project) {
-        this.project = project;
+    /**
+     * 构造函数，用于 IntelliJ 服务系统
+     * 
+     * @param application Application 实例
+     */
+    public FileStorageRepository(Application application) {
+        this();
+        LOG.info("通过 Application 初始化 FileStorageRepository");
+    }
+    
+    @Inject
+    public FileStorageRepository() {
+        LOG.info("初始化应用级别的 FileStorageRepository");
         
         // 使用用户主目录下的.private-reader目录作为基础存储路径
         this.baseStoragePath = Path.of(System.getProperty("user.home"), ".private-reader");
@@ -200,7 +212,7 @@ public class FileStorageRepository implements StorageRepository {
      */
     private static String hashString(String input) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);
-        byte[] hash = digest.digest(input.getBytes());
+        byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
         return bytesToHex(hash);
     }
     

@@ -1,11 +1,14 @@
 package com.lv.tool.privatereader.repository.impl;
 
-import com.intellij.openapi.components.Service;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
+import com.lv.tool.privatereader.repository.impl.FileBookRepository;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import org.jetbrains.annotations.NotNull;
 
@@ -15,38 +18,62 @@ import org.jetbrains.annotations.NotNull;
  * 基于文件系统实现阅读进度仓库接口，管理书籍阅读进度的持久化存储。
  * 通过BookRepository更新书籍信息，实现阅读进度的存储。
  */
-@Service(Service.Level.PROJECT)
-public class FileReadingProgressRepository implements ReadingProgressRepository {
+@Singleton
+public final class FileReadingProgressRepository implements ReadingProgressRepository {
     private static final Logger LOG = Logger.getInstance(FileReadingProgressRepository.class);
     
-    private final Project project;
     private final BookRepository bookRepository;
     
-    public FileReadingProgressRepository(Project project, BookRepository bookRepository) {
-        this.project = project;
+    /**
+     * 构造函数，用于 IntelliJ 服务系统
+     * 
+     * @param application Application 实例
+     */
+    public FileReadingProgressRepository(Application application) {
+        LOG.info("通过 Application 初始化 FileReadingProgressRepository");
+        this.bookRepository = application.getService(BookRepository.class);
+        
+        if (bookRepository == null) {
+            LOG.error("BookRepository 服务未初始化");
+        }
+    }
+    
+    @Inject
+    public FileReadingProgressRepository(BookRepository bookRepository) {
+        LOG.info("初始化应用级别的 FileReadingProgressRepository");
+        
         this.bookRepository = bookRepository;
+        
+        if (bookRepository == null) {
+            LOG.error("BookRepository 服务未初始化");
+        }
     }
     
     @Override
     public void updateProgress(@NotNull Book book, String chapterId, String chapterTitle, int position) {
+        // Add Debug Log
+        LOG.debug(String.format("updateProgress(title,pos) called: Book='%s'(ID:%s), ChapterID=%s, Title='%s', Position=%d (Page will be 1)",
+                book.getTitle(), book.getId(), chapterId, chapterTitle, position));
         updateProgress(book, chapterId, chapterTitle, position, 1);
     }
     
     @Override
     public void updateProgress(@NotNull Book book, String chapterId, String chapterTitle, int position, int page) {
+        // Add Debug Log
+        LOG.debug(String.format("updateProgress(title,pos,page) called: Book='%s'(ID:%s), ChapterID=%s, Title='%s', Position=%d, Page=%d",
+                book.getTitle(), book.getId(), chapterId, chapterTitle, position, page));
         if (book == null || chapterId == null) {
             LOG.warn("无法更新阅读进度：book 或 chapterId 为空");
             return;
         }
         
         // 更新书籍进度
-        book.updateReadingProgress(chapterId, chapterTitle, position, page);
+        book.updateReadingProgress(chapterId, position, page);
+        // Set the last read chapter title
+        book.setLastReadChapter(chapterTitle);
         
         // 更新存储
         bookRepository.updateBook(book);
-        
-        // 发布更新事件
-        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
     }
     
     @Override
@@ -79,9 +106,6 @@ public class FileReadingProgressRepository implements ReadingProgressRepository 
         
         // 保存更新
         bookRepository.updateBook(book);
-        
-        // 发布更新事件
-        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
     }
     
     @Override
@@ -117,12 +141,9 @@ public class FileReadingProgressRepository implements ReadingProgressRepository 
         }
         
         book.setCurrentChapterIndex(0);
-        book.updateReadingProgress("", "", 0, 1);
+        book.updateReadingProgress("", 0, 1);
         
         // 保存更新
         bookRepository.updateBook(book);
-        
-        // 发布更新事件
-        project.getMessageBus().syncPublisher(BookshelfTopics.BOOK_UPDATED).bookUpdated(book);
     }
 }

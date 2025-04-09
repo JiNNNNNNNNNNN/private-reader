@@ -1,13 +1,13 @@
 package com.lv.tool.privatereader.settings;
 
-import java.util.EventListener;
-
 /**
- * 阅读模式设置变更监听器
+ * 阅读模式设置监听器
+ * 用于监听阅读模式的变化
  */
-public interface ReaderModeSettingsListener extends EventListener {
+public interface ReaderModeSettingsListener {
     /**
-     * 阅读模式设置变更时调用
+     * 阅读模式变化时调用
+     * @param notificationMode 是否为通知栏模式
      */
-    void readerModeSettingsChanged();
+    void modeChanged(boolean notificationMode);
 } 

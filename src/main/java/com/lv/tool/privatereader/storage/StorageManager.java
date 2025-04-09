@@ -1,11 +1,13 @@
 package com.lv.tool.privatereader.storage;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
+import com.lv.tool.privatereader.repository.BookRepository;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -16,6 +18,7 @@ import java.text.Normalizer;
 import java.util.Base64;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 存储管理器
@@ -28,21 +31,20 @@ import java.security.NoSuchAlgorithmException;
  * 
  * 提供统一的存储路径管理和存储操作接口
  */
-@Service(Service.Level.PROJECT)
+@Service(Service.Level.APP)
 public final class StorageManager {
     private static final Logger LOG = Logger.getInstance(StorageManager.class);
     private static final int MAX_FILENAME_LENGTH = 255; // 大多数文件系统的限制
     private static final String HASH_ALGORITHM = "SHA-256";
     
-    private final Project project;
     private final Path baseStoragePath;
     private final Path booksPath;
     private final Path cachePath;
     private final Path settingsPath;
     private final Path backupPath;
     
-    public StorageManager(Project project) {
-        this.project = project;
+    public StorageManager() {
+        LOG.info("初始化应用级别的 StorageManager");
         
         // 使用用户主目录下的.private-reader目录作为基础存储路径
         this.baseStoragePath = Path.of(System.getProperty("user.home"), ".private-reader");
@@ -54,8 +56,30 @@ public final class StorageManager {
         // 创建存储目录结构
         createStorageDirectories();
         
-        // 检查并执行数据迁移
+        // 不再在构造函数中执行耗时迁移
+        // migrateFromOldLocation();
+        // migrateSettings();
+    }
+    
+    /**
+     * 执行应用初始化完成后的任务，例如数据迁移。
+     * 此方法应在后台线程中调用。
+     */
+    public void performPostInitializationTasks() {
+        LOG.info("开始执行 StorageManager 的初始化后任务...");
+        // 从旧位置迁移数据（如果需要）
         migrateFromOldLocation();
+        
+        // 迁移设置
+        migrateSettings();
+        LOG.info("StorageManager 的初始化后任务完成。");
+    }
+    
+    /**
+     * 获取设置存储服务实例
+     */
+    public SettingsStorage getSettingsStorage() {
+        return ApplicationManager.getApplication().getService(SettingsStorage.class);
     }
     
     /**
@@ -146,21 +170,12 @@ public final class StorageManager {
     }
     
     /**
-     * 获取书籍数据存储服务
-     * @return 书籍存储服务
-     */
-    @NotNull
-    public BookStorage getBookStorage() {
-        return project.getService(BookStorage.class);
-    }
-    
-    /**
      * 获取章节缓存管理器
      * @return 章节缓存管理器
      */
     @NotNull
     public ChapterCacheManager getChapterCacheManager() {
-        return project.getService(ChapterCacheManager.class);
+        return com.intellij.openapi.application.ApplicationManager.getApplication().getService(ChapterCacheManager.class);
     }
     
     /**
@@ -255,7 +270,12 @@ public final class StorageManager {
     public void clearAllStorage() {
         try {
             // 删除所有书籍数据
-            getBookStorage().clearAllBooks();
+            BookRepository bookRepository = com.intellij.openapi.application.ApplicationManager.getApplication().getService(BookRepository.class);
+            if (bookRepository != null) {
+                bookRepository.clearAllBooks();
+            } else {
+                LOG.error("无法获取 BookRepository 服务，无法清理书籍数据。");
+            }
             
             // 删除所有缓存
             getChapterCacheManager().clearAllCache();
@@ -368,7 +388,7 @@ public final class StorageManager {
      */
     private static String hashString(String input) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance(HASH_ALGORITHM);
-        byte[] hash = digest.digest(input.getBytes());
+        byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
         // 只使用前8个字节，足够区分
         byte[] shortened = new byte[8];
         System.arraycopy(hash, 0, shortened, 0, 8);
@@ -414,6 +434,30 @@ public final class StorageManager {
             // 降级方案：使用Base64编码
             String encoded = Base64.getUrlEncoder().encodeToString(url.getBytes());
             return getSafeFileName(encoded) + ".txt";
+        }
+    }
+    
+    /**
+     * 迁移设置（现在是初始化后任务的一部分）
+     */
+    private void migrateSettings() {
+        try {
+            // TODO: 实现具体的设置迁移逻辑
+            // SettingsMigrationManager migrationManager = ApplicationManager.getApplication().getService(SettingsMigrationManager.class);
+            // if (migrationManager != null) {
+                 // 例如: 
+                 // OldSettings oldSettings = loadOldSettings();
+                 // if (oldSettings != null) {
+                 //     NewSettings newSettings = migrationManager.migrate(OldSettings.class, "1.0", "2.0", oldSettings);
+                 //     saveNewSettings(newSettings);
+                 // }
+            //    LOG.info("设置迁移检查完成 (具体逻辑待实现)");
+            // } else {
+            //    LOG.warn("SettingsMigrationManager 服务未找到，无法执行设置迁移");
+            // }
+            LOG.info("设置迁移检查跳过 (具体逻辑待实现)"); // 临时日志
+        } catch (Exception e) {
+            LOG.error("设置迁移失败: " + e.getMessage(), e);
         }
     }
 } 

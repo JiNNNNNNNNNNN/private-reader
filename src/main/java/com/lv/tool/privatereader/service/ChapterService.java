@@ -1,59 +1,82 @@
 package com.lv.tool.privatereader.service;
 
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.parser.NovelParser;
+import com.lv.tool.privatereader.parser.NovelParser.Chapter;
+import org.jetbrains.annotations.NotNull;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * 章节服务接口
- * 处理章节相关的业务逻辑
+ * 提供响应式API获取章节内容和管理章节缓存
  */
 public interface ChapterService {
     /**
-     * 获取书籍的所有章节
-     * @param book 书籍对象
+     * 获取章节对象
+     *
+     * @param book      书籍
+     * @param chapterId 章节ID
+     * @return 章节对象
+     */
+    Mono<Chapter> getChapter(@NotNull Book book, @NotNull String chapterId);
+
+    /**
+     * 获取章节对象，如果获取失败则尝试使用缓存中的过期内容
+     *
+     * @param book      书籍
+     * @param chapterId 章节ID
+     * @return 章节对象
+     */
+    Mono<Chapter> getChapterWithFallback(@NotNull Book book, @NotNull String chapterId);
+
+    /**
+     * 获取章节列表
+     *
+     * @param book 书籍
      * @return 章节列表
      */
-    List<NovelParser.Chapter> getChapters(Book book);
-    
+    Mono<List<Chapter>> getChapterList(@NotNull Book book);
+
     /**
-     * 获取章节内容
-     * @param book 书籍对象
-     * @param chapterId 章节ID
-     * @return 章节内容
-     */
-    String getChapterContent(Book book, String chapterId);
-    
-    /**
-     * 异步获取章节内容
-     * @param book 书籍对象
-     * @param chapterId 章节ID
-     * @return 包含章节内容的CompletableFuture
-     */
-    CompletableFuture<String> getChapterContentAsync(Book book, String chapterId);
-    
-    /**
-     * 刷新章节内容（强制重新加载）
-     * @param book 书籍对象
-     * @param chapterId 章节ID
-     * @return 刷新后的章节内容
-     */
-    String refreshChapterContent(Book book, String chapterId);
-    
-    /**
-     * 获取上一章节
-     * @param book 书籍对象
+     * 预加载章节
+     *
+     * @param book             书籍
      * @param currentChapterId 当前章节ID
-     * @return 上一章节，如果没有则返回null
+     * @param count            预加载数量
+     * @return 预加载的章节流
      */
-    NovelParser.Chapter getPreviousChapter(Book book, String currentChapterId);
+    Flux<Chapter> preloadChapters(@NotNull Book book, @NotNull String currentChapterId, int count);
+
+    /**
+     * 清除书籍缓存
+     *
+     * @param book 书籍
+     * @return 完成信号
+     */
+    Mono<Void> clearBookCache(@NotNull Book book);
+
+    /**
+     * 清除所有缓存
+     *
+     * @return 完成信号
+     */
+    Mono<Void> clearAllCache();
     
     /**
-     * 获取下一章节
-     * @param book 书籍对象
-     * @param currentChapterId 当前章节ID
-     * @return 下一章节，如果没有则返回null
+     * 扩展章节类，包含内容
      */
-    NovelParser.Chapter getNextChapter(Book book, String currentChapterId);
+    class EnhancedChapter extends Chapter {
+        private final String content;
+        
+        public EnhancedChapter(String title, String url, String content) {
+            super(title, url);
+            this.content = content != null ? content : "";
+        }
+        
+        public String getContent() {
+            return content;
+        }
+    }
 } 

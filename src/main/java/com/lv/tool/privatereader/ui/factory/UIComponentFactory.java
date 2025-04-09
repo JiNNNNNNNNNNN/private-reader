@@ -71,7 +71,12 @@ public class UIComponentFactory {
     public static JTextPane createContentArea() {
         JTextPane contentArea = new JTextPane(new DefaultStyledDocument(new StyleContext()));
         contentArea.setEditable(false);
-        contentArea.setMargin(JBUI.insets(10));
+        contentArea.setMargin(JBUI.insets(15));
+        contentArea.setBackground(UIManager.getColor("EditorPane.background"));
+        
+        // 设置更平滑的滚动
+        contentArea.putClientProperty("JEditorPane.honorDisplayProperties", Boolean.TRUE);
+        contentArea.putClientProperty("caretWidth", 2);
         
         return contentArea;
     }
@@ -84,6 +89,13 @@ public class UIComponentFactory {
         scrollPane.setBorder(JBUI.Borders.empty());
         scrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        
+        // 设置滚动速度
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        
+        // 使用更现代的滚动条UI
+        scrollPane.getVerticalScrollBar().putClientProperty("JScrollBar.showButtons", false);
+        scrollPane.getVerticalScrollBar().putClientProperty("JScrollBar.width", 10);
         
         return scrollPane;
     }
@@ -106,7 +118,7 @@ public class UIComponentFactory {
      */
     public static JSplitPane createSplitPane(int orientation, Component leftComponent, Component rightComponent) {
         JSplitPane splitPane = new JSplitPane(orientation, leftComponent, rightComponent);
-        splitPane.setDividerSize(3);
+        splitPane.setDividerSize(1);
         splitPane.setDividerLocation(250);
         splitPane.setContinuousLayout(true);
         splitPane.setBorder(JBUI.Borders.empty());

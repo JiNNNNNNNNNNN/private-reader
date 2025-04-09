@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- 基础形状 - 使用 14x14 的可见区域，保留 1px 透明边框 -->
+    
+    <!-- 书本形状 - 使用 IDEA 推荐的蓝色 #389FD6 -->
+    <path d="M2 2V14C2 14.5523 2.44772 15 3 15H13C13.5523 15 14 14.5523 14 14V2C14 1.44772 13.5523 1 13 1H3C2.44772 1 2 1.44772 2 2Z" fill="#389FD6"/>
+    
+    <!-- 书页 -->
+    <path d="M3 2H13V14H3V2Z" fill="#FFFFFF"/>
+    
+    <!-- 书页纹理 - 简化为几条线 -->
+    <rect x="4" y="4" width="8" height="1" rx="0.5" fill="#6E6E6E" fill-opacity="0.6"/>
+    <rect x="4" y="6" width="8" height="1" rx="0.5" fill="#6E6E6E" fill-opacity="0.6"/>
+    <rect x="4" y="8" width="8" height="1" rx="0.5" fill="#6E6E6E" fill-opacity="0.6"/>
+    <rect x="4" y="10" width="5" height="1" rx="0.5" fill="#6E6E6E" fill-opacity="0.6"/>
+    
+    <!-- 小锁图标（隐私）- 使用无透明度的颜色用于小元素 -->
+    <rect x="7" y="11" width="2" height="2" rx="0.5" fill="#6E6E6E"/>
+    <path d="M6.5 11V10C6.5 9.44772 6.94772 9 7.5 9C8.05228 9 8.5 9.44772 8.5 10V11" stroke="#6E6E6E" stroke-width="0.75" stroke-linecap="round"/>
+    
+    <!-- 书签 - 使用 IDEA 推荐的红色 #DB5860 -->
+    <path d="M11 2V5L10 4L9 5V2H11Z" fill="#DB5860"/>
+</svg> 

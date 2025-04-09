@@ -32,6 +32,8 @@ public class Book {
     @Tag @Expose private String author;
     /** 书籍来源URL */
     @Tag @Expose private String url;
+    /** 书籍来源ID */
+    @Tag @Expose private String sourceId;
     /** 创建时间 */
     @Tag @Expose private long createTimeMillis;
     /** 最新章节标题 */
@@ -176,9 +178,8 @@ public class Book {
         return (double) currentChapterIndex / totalChapters;
     }
 
-    public void updateReadingProgress(String chapterId, String chapterTitle, int position, int page) {
+    public void updateReadingProgress(String chapterId, int position, int page) {
         this.lastReadChapterId = chapterId;
-        this.lastReadChapter = chapterTitle;
         this.lastReadPosition = position;
         this.lastReadTimeMillis = System.currentTimeMillis();
         this.lastReadPage = page;
@@ -259,5 +260,49 @@ public class Book {
 
     public void setLastReadPage(int lastReadPage) {
         this.lastReadPage = lastReadPage;
+    }
+
+    /**
+     * 获取书籍名称
+     * 
+     * @return 书籍标题
+     */
+    public String getName() {
+        return this.title;
+    }
+    
+    /**
+     * 获取书籍来源ID
+     * 
+     * @return 书籍来源ID
+     */
+    public String getSourceId() {
+        if (sourceId != null && !sourceId.isEmpty()) {
+            return sourceId;
+        }
+        
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
+        
+        // 从URL中提取源ID
+        // 假设URL格式为：http://example.com/book/123
+        // 我们提取域名作为源ID
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            return uri.getHost();
+        } catch (Exception e) {
+            // 如果URL解析失败，返回空字符串
+            return "";
+        }
+    }
+    
+    /**
+     * 设置书籍来源ID
+     *
+     * @param sourceId 书籍来源ID
+     */
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
     }
 } 

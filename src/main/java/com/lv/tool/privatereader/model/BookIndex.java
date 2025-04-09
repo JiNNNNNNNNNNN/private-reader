@@ -25,8 +25,6 @@ public class BookIndex {
     @Tag @Expose private long createTimeMillis;
     /** 最新章节标题 */
     @Tag @Expose private String lastChapter;
-    /** 上次阅读的章节标题 */
-    @Tag @Expose private String lastReadChapter;
     /** 上次阅读时间戳 */
     @Tag @Expose private long lastReadTimeMillis;
     /** 总章节数 */
@@ -52,7 +50,6 @@ public class BookIndex {
         index.url = book.getUrl();
         index.createTimeMillis = book.getCreateTimeMillis();
         index.lastChapter = book.getLastChapter();
-        index.lastReadChapter = book.getLastReadChapter();
         index.lastReadTimeMillis = book.getLastReadTimeMillis();
         index.totalChapters = book.getTotalChapters();
         index.finished = book.isFinished();
@@ -105,14 +102,6 @@ public class BookIndex {
 
     public void setLastChapter(String lastChapter) {
         this.lastChapter = lastChapter;
-    }
-
-    public String getLastReadChapter() {
-        return lastReadChapter;
-    }
-
-    public void setLastReadChapter(String lastReadChapter) {
-        this.lastReadChapter = lastReadChapter;
     }
 
     public long getLastReadTimeMillis() {

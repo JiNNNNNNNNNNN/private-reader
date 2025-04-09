@@ -13,6 +13,10 @@ import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.ParserFactory;
 import com.lv.tool.privatereader.service.BookService;
 import org.jetbrains.annotations.Nullable;
+import com.lv.tool.privatereader.async.ReactiveSchedulers;
+import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
+import com.intellij.openapi.application.ApplicationManager;
+import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -27,7 +31,7 @@ public class AddBookDialog extends DialogWrapper {
     public AddBookDialog(Project project) {
         super(project);
         this.project = project;
-        this.bookService = project.getService(BookService.class);
+        this.bookService = com.intellij.openapi.application.ApplicationManager.getApplication().getService(BookService.class);
         
         setTitle("添加书籍");
         setSize(400, 150);
@@ -90,13 +94,46 @@ public class AddBookDialog extends DialogWrapper {
             book.setCreateTimeMillis(System.currentTimeMillis());
             book.setParser(parser);
             
-            // 添加书籍
-            boolean success = bookService.addBook(book);
+            // 使用BookService添加书籍
+            BookService bookService = com.intellij.openapi.application.ApplicationManager.getApplication().getService(BookService.class);
+            
+            // 检查服务是否存在
+            if (bookService == null) {
+                LOG.error("无法获取 BookService 实例");
+                Messages.showErrorDialog(this.project, "无法添加书籍，服务不可用。", "错误");
+                return;
+            }
+            
+            // boolean success = bookService.addBook(book); // Old sync call
+            bookService.addBook(book) // New async call
+                .publishOn(ReactiveSchedulers.getInstance().ui()) // Switch to UI thread for UI updates
+                .subscribe(
+                    success -> {
+                        if (success) {
+                            LOG.info("成功添加书籍: " + book.getTitle());
+                            dispose(); // 关闭对话框
+                            // 通过事件总线通知刷新书架
+                            ApplicationManager.getApplication().getMessageBus()
+                                .syncPublisher(PrivateReaderPanel.BookDataListener.BOOK_DATA_TOPIC).bookDataLoaded();
+                        } else {
+                            LOG.warn("添加书籍失败 (返回 false): " + book.getTitle());
+                            Messages.showWarningDialog(this.project, "添加书籍失败，请检查URL或稍后再试。", "添加失败");
+                        }
+                    },
+                    error -> {
+                        LOG.error("添加书籍时出错: " + book.getTitle(), error);
+                        Messages.showErrorDialog(this.project, "添加书籍时发生错误: " + error.getMessage(), "错误");
+                    }
+                );
+            
+            // Remove old sync logic
+            /*
             if (success) {
                 super.doOKAction();
             } else {
                 Messages.showErrorDialog(project, "添加书籍失败", "错误");
             }
+            */
         } catch (Exception e) {
             ExceptionHandler.handle(project, e, "添加书籍失败: " + e.getMessage());
             LOG.error("添加书籍失败", e);

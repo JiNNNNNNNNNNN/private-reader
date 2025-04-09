@@ -1,17 +1,10 @@
 package com.lv.tool.privatereader.settings;
 
 import com.intellij.openapi.application.PathManager;
-import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.components.State;
-import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.util.xmlb.XmlSerializerUtil;
-import com.lv.tool.privatereader.storage.StorageManager;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 
@@ -24,260 +17,268 @@ import java.nio.file.Path;
  * - 缓存过期时间
  * - 章节预加载设置
  */
-@State(
-        name = "PrivateReaderCacheSettings",
-        storages = @Storage("private-reader-cache-settings.xml")
-)
-@Service(Service.Level.PROJECT)
-public class CacheSettings implements PersistentStateComponent<CacheSettings> {
+@Service(Service.Level.APP)
+public class CacheSettings extends BaseSettings<CacheSettings> {
     private static final Logger LOG = Logger.getInstance(CacheSettings.class);
 
-    private boolean enableCache = true;
-    private int maxCacheSize = 100; // MB
-    private int maxCacheAge = 7; // days
-    private boolean enablePreload = true; // 是否启用预加载
-    private int preloadCount = 50; // 预加载章节数量
-    private int preloadDelay = 1000; // 预加载请求间隔(毫秒)
+    private long cacheExpiryHours = 24 * 7; // 默认缓存过期时间：7天
+    private int maxCacheSizeMB = 100; // 默认最大缓存大小：100MB
+    private boolean enableCache = true; // 默认启用缓存
+    private boolean cleanupOnStartup = true; // 默认启动时清理过期缓存
+    private boolean preloadNextChapter = true; // 默认预加载下一章
+    private int preloadCount = 3; // 默认预加载数量
+    private int maxCacheSize = 100; // 默认最大缓存大小（单位：MB）
+    private int maxCacheAge = 7; // 默认最大缓存时间（单位：天）
+    private boolean enablePreload = true; // 默认启用预加载
+    private int preloadDelay = 500; // 默认预加载延迟（单位：毫秒）
 
-    private final Project project;
-
-    public CacheSettings(Project project) {
-        this.project = project;
+    /**
+     * 默认构造函数
+     */
+    public CacheSettings() {
+        super();
     }
 
-    // 无参构造函数，用于序列化/反序列化
-    public CacheSettings() {
-        this.project = null;
+    /**
+     * 获取缓存过期时间（小时）
+     *
+     * @return 缓存过期时间
+     */
+    public long getCacheExpiryHours() {
+        ensureSettingsLoaded();
+        return cacheExpiryHours;
+    }
+
+    /**
+     * 设置缓存过期时间（小时）
+     *
+     * @param cacheExpiryHours 缓存过期时间
+     */
+    public void setCacheExpiryHours(long cacheExpiryHours) {
+        this.cacheExpiryHours = cacheExpiryHours;
+        markDirty();
+    }
+
+    /**
+     * 获取最大缓存大小（MB）
+     *
+     * @return 最大缓存大小
+     */
+    public int getMaxCacheSizeMB() {
+        ensureSettingsLoaded();
+        return maxCacheSizeMB;
+    }
+
+    /**
+     * 设置最大缓存大小（MB）
+     *
+     * @param maxCacheSizeMB 最大缓存大小
+     */
+    public void setMaxCacheSizeMB(int maxCacheSizeMB) {
+        this.maxCacheSizeMB = maxCacheSizeMB;
+        markDirty();
     }
 
     /**
      * 是否启用缓存
+     *
      * @return 是否启用缓存
      */
     public boolean isEnableCache() {
+        ensureSettingsLoaded();
         return enableCache;
     }
 
     /**
      * 设置是否启用缓存
+     *
      * @param enableCache 是否启用缓存
      */
     public void setEnableCache(boolean enableCache) {
         this.enableCache = enableCache;
+        markDirty();
     }
 
     /**
-     * 获取最大缓存大小（MB）
-     * @return 最大缓存大小
+     * 是否在启动时清理过期缓存
+     *
+     * @return 是否在启动时清理过期缓存
      */
-    public int getMaxCacheSize() {
-        return maxCacheSize;
+    public boolean isCleanupOnStartup() {
+        ensureSettingsLoaded();
+        return cleanupOnStartup;
     }
 
     /**
-     * 设置最大缓存大小（MB）
-     * @param maxCacheSize 最大缓存大小
+     * 设置是否在启动时清理过期缓存
+     *
+     * @param cleanupOnStartup 是否在启动时清理过期缓存
      */
-    public void setMaxCacheSize(int maxCacheSize) {
-        this.maxCacheSize = maxCacheSize;
+    public void setCleanupOnStartup(boolean cleanupOnStartup) {
+        this.cleanupOnStartup = cleanupOnStartup;
+        markDirty();
     }
 
     /**
-     * 获取缓存过期时间（天）
-     * @return 缓存过期时间
+     * 是否预加载下一章
+     *
+     * @return 是否预加载下一章
      */
-    public int getMaxCacheAge() {
-        return maxCacheAge;
+    public boolean isPreloadNextChapter() {
+        ensureSettingsLoaded();
+        return preloadNextChapter;
     }
 
     /**
-     * 设置缓存过期时间（天）
-     * @param maxCacheAge 缓存过期时间
+     * 设置是否预加载下一章
+     *
+     * @param preloadNextChapter 是否预加载下一章
      */
-    public void setMaxCacheAge(int maxCacheAge) {
-        this.maxCacheAge = maxCacheAge;
+    public void setPreloadNextChapter(boolean preloadNextChapter) {
+        this.preloadNextChapter = preloadNextChapter;
+        markDirty();
     }
 
     /**
-     * 是否启用章节预加载
-     * @return 是否启用预加载
-     */
-    public boolean isEnablePreload() {
-        return enablePreload;
-    }
-
-    /**
-     * 设置是否启用章节预加载
-     * @param enablePreload 是否启用预加载
-     */
-    public void setEnablePreload(boolean enablePreload) {
-        this.enablePreload = enablePreload;
-    }
-
-    /**
-     * 获取预加载章节数量
-     * @return 预加载章节数量
+     * 获取预加载数量
+     *
+     * @return 预加载数量
      */
     public int getPreloadCount() {
+        ensureSettingsLoaded();
         return preloadCount;
     }
 
     /**
-     * 设置预加载章节数量
-     * @param preloadCount 预加载章节数量
+     * 设置预加载数量
+     *
+     * @param preloadCount 预加载数量
      */
     public void setPreloadCount(int preloadCount) {
         this.preloadCount = preloadCount;
+        markDirty();
     }
 
     /**
-     * 获取预加载请求间隔（毫秒）
-     * @return 预加载请求间隔
+     * 获取最大缓存大小
+     *
+     * @return 最大缓存大小
+     */
+    public int getMaxCacheSize() {
+        ensureSettingsLoaded();
+        return maxCacheSize;
+    }
+
+    /**
+     * 设置最大缓存大小
+     *
+     * @param maxCacheSize 最大缓存大小
+     */
+    public void setMaxCacheSize(int maxCacheSize) {
+        this.maxCacheSize = maxCacheSize;
+        markDirty();
+    }
+
+    /**
+     * 获取最大缓存时间（天）
+     *
+     * @return 最大缓存时间
+     */
+    public int getMaxCacheAge() {
+        ensureSettingsLoaded();
+        return maxCacheAge;
+    }
+
+    /**
+     * 设置最大缓存时间（天）
+     *
+     * @param maxCacheAge 最大缓存时间
+     */
+    public void setMaxCacheAge(int maxCacheAge) {
+        this.maxCacheAge = maxCacheAge;
+        markDirty();
+    }
+
+    /**
+     * 是否启用预加载
+     *
+     * @return 是否启用预加载
+     */
+    public boolean isEnablePreload() {
+        ensureSettingsLoaded();
+        return enablePreload;
+    }
+
+    /**
+     * 设置是否启用预加载
+     *
+     * @param enablePreload 是否启用预加载
+     */
+    public void setEnablePreload(boolean enablePreload) {
+        this.enablePreload = enablePreload;
+        markDirty();
+    }
+
+    /**
+     * 获取预加载延迟（毫秒）
+     *
+     * @return 预加载延迟
      */
     public int getPreloadDelay() {
+        ensureSettingsLoaded();
         return preloadDelay;
     }
 
     /**
-     * 设置预加载请求间隔（毫秒）
-     * @param preloadDelay 预加载请求间隔
+     * 设置预加载延迟（毫秒）
+     *
+     * @param preloadDelay 预加载延迟
      */
     public void setPreloadDelay(int preloadDelay) {
         this.preloadDelay = preloadDelay;
+        markDirty();
     }
 
     /**
      * 获取缓存目录路径
-     * 优先使用StorageRepository获取，如果不可用则使用默认路径
      *
      * @return 缓存目录路径
      */
     @NotNull
     public String getCacheDirectoryPath() {
-        // 尝试从StorageRepository获取缓存路径
-        com.lv.tool.privatereader.repository.StorageRepository storageRepository = getStorageRepository();
-        if (storageRepository != null) {
-            return storageRepository.getCachePath();
-        }
-
-        // 如果StorageRepository不可用，使用默认路径
-        LOG.info("StorageRepository不可用，使用默认缓存路径");
-        return Path.of(PathManager.getConfigPath(), "private-reader", "cache").toString();
-    }
-
-    /**
-     * 获取StorageRepository实例
-     *
-     * @return StorageRepository实例，如果不可用则返回null
-     */
-    @Nullable
-    private com.lv.tool.privatereader.repository.StorageRepository getStorageRepository() {
-        if (project != null) {
-            com.lv.tool.privatereader.repository.RepositoryModule repositoryModule = 
-                project.getService(com.lv.tool.privatereader.repository.RepositoryModule.class);
-            if (repositoryModule != null) {
-                return repositoryModule.getStorageRepository();
-            }
-            
-            // 尝试使用旧的StorageManager
-            StorageManager storageManager = project.getService(StorageManager.class);
-            if (storageManager != null) {
-                return new com.lv.tool.privatereader.repository.StorageRepository() {
-                    @Override
-                    public @NotNull String getBaseStoragePath() {
-                        return storageManager.getBaseStoragePath();
-                    }
-
-                    @Override
-                    public @NotNull String getBooksPath() {
-                        return storageManager.getBooksPath();
-                    }
-
-                    @Override
-                    public @NotNull String getCachePath() {
-                        return storageManager.getCachePath();
-                    }
-
-                    @Override
-                    public @NotNull String getSettingsPath() {
-                        return storageManager.getSettingsPath();
-                    }
-
-                    @Override
-                    public @NotNull String getBackupPath() {
-                        return storageManager.getBackupPath();
-                    }
-
-                    @Override
-                    public @NotNull String getBooksFilePath() {
-                        return storageManager.getBooksPath() + "/index.json";
-                    }
-
-                    @Override
-                    public @NotNull String createBookDirectory(String bookId) {
-                        return storageManager.createBookDirectory(bookId);
-                    }
-
-                    @Override
-                    public @NotNull String getBookDirectory(String bookId) {
-                        return storageManager.getBookDirectory(bookId);
-                    }
-
-                    @Override
-                    public void clearAllStorage() {
-                        storageManager.clearAllStorage();
-                    }
-
-                    @Override
-                    public @NotNull String createBackup() {
-                        return storageManager.createBackup();
-                    }
-
-                    @Override
-                    public boolean restoreFromBackup(String backupFilePath) {
-                        return storageManager.restoreFromBackup(backupFilePath);
-                    }
-
-                    @Override
-                    public @NotNull String getSafeFileName(@NotNull String fileName) {
-                        return storageManager.getSafeFileName(fileName);
-                    }
-
-                    @Override
-                    public @NotNull String getCacheFileName(@NotNull String url) {
-                        return storageManager.getCacheFileName(url);
-                    }
-                };
-            }
-        }
-
-        // 如果当前实例没有关联项目，尝试从打开的项目中获取
-        Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-        if (openProjects.length > 0) {
-            com.lv.tool.privatereader.repository.RepositoryModule repositoryModule = 
-                openProjects[0].getService(com.lv.tool.privatereader.repository.RepositoryModule.class);
-            if (repositoryModule != null) {
-                return repositoryModule.getStorageRepository();
-            }
-            
-            // 尝试使用旧的StorageManager
-            StorageManager storageManager = openProjects[0].getService(StorageManager.class);
-            if (storageManager != null) {
-                // 同上，创建适配器
-                // 此处省略重复代码
-            }
-        }
-
-        return null;
+        ensureSettingsLoaded();
+        return PathManager.getSystemPath() + "/private-reader/cache";
     }
 
     @Override
-    public @Nullable CacheSettings getState() {
-        return this;
+    protected void copyFrom(CacheSettings source) {
+        this.cacheExpiryHours = source.cacheExpiryHours;
+        this.maxCacheSizeMB = source.maxCacheSizeMB;
+        this.enableCache = source.enableCache;
+        this.cleanupOnStartup = source.cleanupOnStartup;
+        this.preloadNextChapter = source.preloadNextChapter;
+        this.preloadCount = source.preloadCount;
+        this.maxCacheSize = source.maxCacheSize;
+        this.maxCacheAge = source.maxCacheAge;
+        this.enablePreload = source.enablePreload;
+        this.preloadDelay = source.preloadDelay;
     }
 
     @Override
-    public void loadState(@NotNull CacheSettings state) {
-        XmlSerializerUtil.copyBean(state, this);
+    protected CacheSettings getDefault() {
+        // 直接创建新实例并设置默认值
+        // BaseSettings.ensureSettingsLoaded 会处理 isInitializingDefaults 标志
+        CacheSettings settings = new CacheSettings();
+        settings.cacheExpiryHours = 24 * 7; // 默认7天
+        settings.maxCacheSizeMB = 100; // 默认100MB
+        settings.enableCache = true;
+        settings.cleanupOnStartup = true;
+        settings.preloadNextChapter = true;
+        settings.preloadCount = 3;
+        settings.maxCacheSize = 100;
+        settings.maxCacheAge = 7;
+        settings.enablePreload = true;
+        settings.preloadDelay = 500;
+        return settings;
     }
 } 

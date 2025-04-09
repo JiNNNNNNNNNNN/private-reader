@@ -2,6 +2,7 @@ package com.lv.tool.privatereader.ui.actions;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.ui.Messages;
@@ -50,7 +51,14 @@ public class OpenBookAction extends AnAction implements DumbAware {
         // 加载上次阅读的章节
         readerPanel.loadLastReadChapter();
     }
-
+    
+    @Override
+    @NotNull
+    public ActionUpdateThread getActionUpdateThread() {
+        // 告诉 IntelliJ 在后台线程而非 EDT 线程中执行 update 方法
+        return ActionUpdateThread.BGT;
+    }
+    
     @Override
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -65,7 +73,6 @@ public class OpenBookAction extends AnAction implements DumbAware {
             return;
         }
 
-        // 只有在有选中书籍时才启用
         Book selectedBook = readerPanel.getBookList().getSelectedValue();
         e.getPresentation().setEnabled(selectedBook != null);
     }

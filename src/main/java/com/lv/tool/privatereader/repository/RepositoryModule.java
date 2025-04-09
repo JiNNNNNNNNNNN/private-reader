@@ -1,76 +1,238 @@
 package com.lv.tool.privatereader.repository;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
-import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.impl.FileBookRepository;
 import com.lv.tool.privatereader.repository.impl.FileChapterCacheRepository;
 import com.lv.tool.privatereader.repository.impl.FileReadingProgressRepository;
 import com.lv.tool.privatereader.repository.impl.FileStorageRepository;
-import com.lv.tool.privatereader.storage.BookStorage;
-import com.lv.tool.privatereader.storage.ReadingProgressManager;
-import com.lv.tool.privatereader.storage.StorageManager;
-import com.lv.tool.privatereader.storage.cache.ChapterCacheManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.List;
+import com.intellij.util.messages.MessageBus;
+// REMOVE: import com.lv.tool.privatereader.events.BookDataListener;
 
 /**
  * 存储仓库模块
  * 
  * 负责创建和管理各种Repository实例，提供统一的访问点。
  * 使用依赖注入模式，确保各个Repository之间的依赖关系正确。
- * 
- * 同时提供兼容层，支持从旧的存储类获取数据。
  */
-@Service(Service.Level.PROJECT)
-public class RepositoryModule {
+@Service(Service.Level.APP)
+public final class RepositoryModule {
     private static final Logger LOG = Logger.getInstance(RepositoryModule.class);
+    private static volatile RepositoryModule instance;
     
-    private final Project project;
-    private final StorageRepository storageRepository;
-    private final BookRepository bookRepository;
-    private final ReadingProgressRepository readingProgressRepository;
-    private final ChapterCacheRepository chapterCacheRepository;
+    private StorageRepository storageRepository;
+    private BookRepository bookRepository;
+    private ReadingProgressRepository readingProgressRepository;
+    private ChapterCacheRepository chapterCacheRepository;
+    private volatile boolean dataReady = false; // Add dataReady flag
     
-    // 旧的存储类实例，用于兼容
-    private final StorageManager storageManager;
-    private final BookStorage bookStorage;
-    private final ReadingProgressManager readingProgressManager;
-    private final ChapterCacheManager chapterCacheManager;
-    
-    public RepositoryModule(Project project) {
-        this.project = project;
+    public RepositoryModule() {
+        LOG.info("初始化应用级别的 RepositoryModule");
+        boolean initializationOk = true;
         
-        // 获取旧的存储类实例
-        this.storageManager = project.getService(StorageManager.class);
-        this.bookStorage = project.getService(BookStorage.class);
-        this.readingProgressManager = project.getService(ReadingProgressManager.class);
-        this.chapterCacheManager = project.getService(ChapterCacheManager.class);
+        try {
+            // 先创建核心的 StorageRepository
+            try {
+                this.storageRepository = ApplicationManager.getApplication().getService(StorageRepository.class);
+                if (this.storageRepository == null) {
+                    LOG.warn("未能从应用服务获取 StorageRepository，创建新实例");
+                    this.storageRepository = new FileStorageRepository();
+                    if (this.storageRepository == null) {
+                        LOG.error("创建 FileStorageRepository 新实例失败！");
+                        initializationOk = false;
+                    } else {
+                        LOG.info("成功创建 FileStorageRepository 实例");
+                    }
+                } else {
+                    LOG.info("成功从应用服务获取 StorageRepository 实例");
+                }
+            } catch (Exception e) {
+                LOG.error("获取或创建 StorageRepository 失败，尝试创建新实例", e);
+                try {
+                    this.storageRepository = new FileStorageRepository();
+                    if (this.storageRepository == null) {
+                        LOG.error("创建 FileStorageRepository 新实例也失败！");
+                        initializationOk = false;
+                    } else {
+                        LOG.info("成功创建 FileStorageRepository 实例 (catch block)");
+                    }
+                } catch (Exception e2) {
+                    LOG.error("创建 FileStorageRepository 新实例时发生严重错误！", e2);
+                    initializationOk = false;
+                }
+            }
+            if (this.storageRepository == null) {
+                LOG.error("StorageRepository 最终未能初始化！");
+                initializationOk = false;
+            }
+            
+            // 创建 BookRepository (依赖 StorageRepository)
+            try {
+                this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
+                if (this.bookRepository == null) {
+                    LOG.warn("未能从应用服务获取 BookRepository，创建新实例");
+                    if (this.storageRepository != null) {
+                        this.bookRepository = new FileBookRepository(ApplicationManager.getApplication(), this.storageRepository);
+                        if (this.bookRepository == null) {
+                            LOG.error("创建 FileBookRepository 新实例失败！");
+                            initializationOk = false;
+                        } else {
+                            LOG.info("成功创建 FileBookRepository 实例");
+                        }
+                    } else {
+                        LOG.error("无法创建 FileBookRepository，因为 StorageRepository 未初始化！");
+                        initializationOk = false;
+                    }
+                } else {
+                    LOG.info("成功从应用服务获取 BookRepository 实例");
+                }
+            } catch (Exception e) {
+                LOG.error("获取或创建 BookRepository 失败，尝试创建新实例", e);
+                if (this.storageRepository != null) {
+                    try {
+                        this.bookRepository = new FileBookRepository(ApplicationManager.getApplication(), this.storageRepository);
+                        if (this.bookRepository == null) {
+                            LOG.error("创建 FileBookRepository 新实例也失败！");
+                            initializationOk = false;
+                        } else {
+                            LOG.info("成功创建 FileBookRepository 实例 (catch block)");
+                        }
+                    } catch (Exception e2) {
+                        LOG.error("创建 FileBookRepository 新实例时发生严重错误！", e2);
+                        initializationOk = false;
+                    }
+                } else {
+                    LOG.error("无法在 catch 块中创建 FileBookRepository，因为 StorageRepository 未初始化！");
+                    initializationOk = false;
+                }
+            }
+            if (this.bookRepository == null) {
+                LOG.error("BookRepository 最终未能初始化！");
+                initializationOk = false;
+            }
+            
+            // 创建 ReadingProgressRepository
+            try {
+                this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+                if (this.readingProgressRepository == null) {
+                    LOG.warn("未能从应用服务获取 ReadingProgressRepository，创建新实例");
+                    this.readingProgressRepository = new FileReadingProgressRepository(ApplicationManager.getApplication());
+                    if (this.readingProgressRepository == null) {
+                        LOG.error("创建 FileReadingProgressRepository 新实例失败！");
+                        initializationOk = false;
+                    } else {
+                        LOG.info("成功创建 FileReadingProgressRepository 实例");
+                    }
+                } else {
+                    LOG.info("成功从应用服务获取 ReadingProgressRepository 实例");
+                }
+            } catch (Exception e) {
+                LOG.error("获取或创建 ReadingProgressRepository 失败，尝试创建新实例", e);
+                try {
+                    this.readingProgressRepository = new FileReadingProgressRepository(ApplicationManager.getApplication());
+                    if (this.readingProgressRepository == null) {
+                        LOG.error("创建 FileReadingProgressRepository 新实例也失败！");
+                        initializationOk = false;
+                    } else {
+                        LOG.info("成功创建 FileReadingProgressRepository 实例 (catch block)");
+                    }
+                } catch (Exception e2) {
+                    LOG.error("创建 FileReadingProgressRepository 新实例时发生严重错误！", e2);
+                    initializationOk = false;
+                }
+            }
+            if (this.readingProgressRepository == null) {
+                LOG.error("ReadingProgressRepository 最终未能初始化！");
+                initializationOk = false;
+            }
+            
+            // 创建 ChapterCacheRepository (依赖 StorageRepository)
+            try {
+                this.chapterCacheRepository = ApplicationManager.getApplication().getService(ChapterCacheRepository.class);
+                if (this.chapterCacheRepository == null) {
+                    LOG.warn("未能从应用服务获取 ChapterCacheRepository，创建新实例");
+                    if (this.storageRepository != null) {
+                        this.chapterCacheRepository = new FileChapterCacheRepository(this.storageRepository);
+                        if (this.chapterCacheRepository == null) {
+                            LOG.error("创建 FileChapterCacheRepository 新实例失败！");
+                            initializationOk = false;
+                        } else {
+                            LOG.info("成功创建 FileChapterCacheRepository 实例");
+                        }
+                    } else {
+                        LOG.error("无法创建 FileChapterCacheRepository，因为 StorageRepository 未初始化！");
+                        initializationOk = false;
+                    }
+                } else {
+                    LOG.info("成功从应用服务获取 ChapterCacheRepository 实例");
+                }
+            } catch (Exception e) {
+                LOG.error("获取或创建 ChapterCacheRepository 失败，尝试创建新实例", e);
+                if (this.storageRepository != null) {
+                    try {
+                        this.chapterCacheRepository = new FileChapterCacheRepository(this.storageRepository);
+                        if (this.chapterCacheRepository == null) {
+                            LOG.error("创建 FileChapterCacheRepository 新实例也失败！");
+                            initializationOk = false;
+                        } else {
+                            LOG.info("成功创建 FileChapterCacheRepository 实例 (catch block)");
+                        }
+                    } catch (Exception e2) {
+                        LOG.error("创建 FileChapterCacheRepository 新实例时发生严重错误！", e2);
+                        initializationOk = false;
+                    }
+                } else {
+                    LOG.error("无法在 catch 块中创建 FileChapterCacheRepository，因为 StorageRepository 未初始化！");
+                    initializationOk = false;
+                }
+            }
+            if (this.chapterCacheRepository == null) {
+                LOG.error("ChapterCacheRepository 最终未能初始化！");
+                initializationOk = false;
+            }
+            
+        } catch (Throwable t) {
+            LOG.error("初始化 RepositoryModule 时发生严重错误", t);
+            initializationOk = false;
+        }
         
-        // 创建新的Repository实例
-        if (storageManager != null) {
-            // 如果旧的存储类可用，创建适配器
-            LOG.info("使用旧的存储类创建Repository适配器");
-            this.storageRepository = createStorageRepositoryAdapter();
-            this.bookRepository = createBookRepositoryAdapter();
-            this.readingProgressRepository = createReadingProgressRepositoryAdapter();
-            this.chapterCacheRepository = createChapterCacheRepositoryAdapter();
+        // 记录最终初始化结果
+        LOG.info("RepositoryModule 初始化完成，最终状态: " +
+                "StorageRepository=" + (storageRepository != null ? "成功" : "失败") + ", " +
+                "BookRepository=" + (bookRepository != null ? "成功" : "失败") + ", " +
+                "ReadingProgressRepository=" + (readingProgressRepository != null ? "成功" : "失败") + ", " +
+                "ChapterCacheRepository=" + (chapterCacheRepository != null ? "成功" : "失败") + ". " + 
+                (initializationOk ? "所有仓库初始化成功。" : "部分或全部仓库初始化失败！"));
+                
+        // If all repositories initialized successfully, mark data as ready and publish event
+        if (initializationOk) {
+            this.dataReady = true;
+            LOG.info("数据已准备就绪 (dataReady=true)，发布 BOOK_DATA_TOPIC 事件...");
+            // TODO: Restore event publishing once BookDataListener is correctly placed in events package
+            // MessageBus messageBus = ApplicationManager.getApplication().getMessageBus();
+            // BookDataListener publisher = messageBus.syncPublisher(BookDataListener.BOOK_DATA_TOPIC);
+            // publisher.bookDataLoaded();
+            LOG.info("事件发布逻辑已暂时注释。"); // Adjusted log message
         } else {
-            // 如果旧的存储类不可用，创建新的实现
-            LOG.info("创建新的Repository实现");
-            this.storageRepository = new FileStorageRepository(project);
-            this.bookRepository = new FileBookRepository(project, storageRepository);
-            this.readingProgressRepository = new FileReadingProgressRepository(project, bookRepository);
-            this.chapterCacheRepository = new FileChapterCacheRepository(project, storageRepository);
+             LOG.warn("部分仓库初始化失败，数据未完全就绪，不发布事件。");
         }
     }
     
     /**
+     * Checks if the core data repositories are initialized and ready.
+     * @return true if data is ready, false otherwise.
+     */
+    public boolean isDataReady() {
+        return dataReady;
+    }
+
+    /**
      * 获取存储仓库
      */
+    @Nullable
     public StorageRepository getStorageRepository() {
         return storageRepository;
     }
@@ -78,6 +240,7 @@ public class RepositoryModule {
     /**
      * 获取书籍仓库
      */
+    @Nullable
     public BookRepository getBookRepository() {
         return bookRepository;
     }
@@ -85,6 +248,7 @@ public class RepositoryModule {
     /**
      * 获取阅读进度仓库
      */
+    @Nullable
     public ReadingProgressRepository getReadingProgressRepository() {
         return readingProgressRepository;
     }
@@ -92,244 +256,37 @@ public class RepositoryModule {
     /**
      * 获取章节缓存仓库
      */
+    @Nullable
     public ChapterCacheRepository getChapterCacheRepository() {
         return chapterCacheRepository;
     }
     
     /**
-     * 创建StorageRepository适配器
+     * 获取 RepositoryModule 实例
+     * 
+     * 首先尝试从应用级服务获取，如果失败则创建一个新实例
      */
-    private StorageRepository createStorageRepositoryAdapter() {
-        return new StorageRepository() {
-            @Override
-            @NotNull
-            public String getBaseStoragePath() {
-                return storageManager.getBaseStoragePath();
+    @NotNull
+    public static RepositoryModule getInstance() {
+        LOG.info("=== 获取 RepositoryModule 实例 ===");
+        try {
+            RepositoryModule module = ApplicationManager.getApplication().getService(RepositoryModule.class);
+            if (module == null) {
+                LOG.warn("无法从应用级服务获取 RepositoryModule，创建新实例");
+                module = new RepositoryModule();
+            } else {
+                LOG.info("成功从应用级服务获取 RepositoryModule 实例");
+                LOG.info("仓库状态: " + 
+                        "StorageRepository=" + (module.getStorageRepository() != null ? "已初始化" : "未初始化") + ", " +
+                        "BookRepository=" + (module.getBookRepository() != null ? "已初始化" : "未初始化") + ", " +
+                        "ReadingProgressRepository=" + (module.getReadingProgressRepository() != null ? "已初始化" : "未初始化") + ", " +
+                        "ChapterCacheRepository=" + (module.getChapterCacheRepository() != null ? "已初始化" : "未初始化"));
             }
-            
-            @Override
-            @NotNull
-            public String getBooksPath() {
-                return storageManager.getBooksPath();
-            }
-            
-            @Override
-            @NotNull
-            public String getCachePath() {
-                return storageManager.getCachePath();
-            }
-            
-            @Override
-            @NotNull
-            public String getSettingsPath() {
-                return storageManager.getSettingsPath();
-            }
-            
-            @Override
-            @NotNull
-            public String getBackupPath() {
-                return storageManager.getBackupPath();
-            }
-            
-            @Override
-            @NotNull
-            public String getBooksFilePath() {
-                return storageManager.getBooksPath() + "/index.json";
-            }
-            
-            @Override
-            @NotNull
-            public String createBookDirectory(String bookId) {
-                return storageManager.createBookDirectory(bookId);
-            }
-            
-            @Override
-            @NotNull
-            public String getBookDirectory(String bookId) {
-                return storageManager.getBookDirectory(bookId);
-            }
-            
-            @Override
-            public void clearAllStorage() {
-                storageManager.clearAllStorage();
-            }
-            
-            @Override
-            @NotNull
-            public String createBackup() {
-                return storageManager.createBackup();
-            }
-            
-            @Override
-            public boolean restoreFromBackup(String backupFilePath) {
-                return storageManager.restoreFromBackup(backupFilePath);
-            }
-            
-            @Override
-            @NotNull
-            public String getSafeFileName(@NotNull String fileName) {
-                return storageManager.getSafeFileName(fileName);
-            }
-            
-            @Override
-            @NotNull
-            public String getCacheFileName(@NotNull String url) {
-                return storageManager.getCacheFileName(url);
-            }
-        };
-    }
-    
-    /**
-     * 创建BookRepository适配器
-     */
-    private BookRepository createBookRepositoryAdapter() {
-        return new BookRepository() {
-            @Override
-            @NotNull
-            public List<Book> getAllBooks(boolean loadDetails) {
-                return bookStorage.getAllBooks(loadDetails);
-            }
-            
-            @Override
-            @NotNull
-            public List<Book> getAllBooks() {
-                return bookStorage.getAllBooks();
-            }
-            
-            @Override
-            @Nullable
-            public Book getBook(String bookId) {
-                return bookStorage.getBook(bookId);
-            }
-            
-            @Override
-            public void addBook(@NotNull Book book) {
-                bookStorage.addBook(book);
-            }
-            
-            @Override
-            public void updateBook(@NotNull Book book) {
-                bookStorage.updateBook(book);
-            }
-            
-            @Override
-            public void updateBooks(@NotNull List<Book> books) {
-                for (Book book : books) {
-                    bookStorage.updateBook(book);
-                }
-            }
-            
-            @Override
-            public void removeBook(@NotNull Book book) {
-                bookStorage.removeBook(book);
-            }
-            
-            @Override
-            public void clearAllBooks() {
-                bookStorage.clearAllBooks();
-            }
-            
-            @Override
-            public String getIndexFilePath() {
-                return storageManager.getBooksPath() + "/index.json";
-            }
-        };
-    }
-    
-    /**
-     * 创建ReadingProgressRepository适配器
-     */
-    private ReadingProgressRepository createReadingProgressRepositoryAdapter() {
-        return new ReadingProgressRepository() {
-            @Override
-            public void updateProgress(@NotNull Book book, String chapterId, String chapterTitle, int position) {
-                readingProgressManager.updateProgress(book, chapterId, chapterTitle, position);
-            }
-            
-            @Override
-            public void updateProgress(@NotNull Book book, String chapterId, String chapterTitle, int position, int page) {
-                readingProgressManager.updateProgress(book, chapterId, chapterTitle, position, page);
-            }
-            
-            @Override
-            public void updateTotalChapters(@NotNull Book book, int totalChapters) {
-                readingProgressManager.updateTotalChapters(book, totalChapters);
-            }
-            
-            @Override
-            public void updateCurrentChapter(@NotNull Book book, int currentChapterIndex) {
-                readingProgressManager.updateCurrentChapter(book, currentChapterIndex);
-            }
-            
-            @Override
-            public void markAsFinished(@NotNull Book book) {
-                readingProgressManager.markAsFinished(book);
-            }
-            
-            @Override
-            public void markAsUnfinished(@NotNull Book book) {
-                readingProgressManager.markAsUnfinished(book);
-            }
-            
-            @Override
-            public void resetProgress(@NotNull Book book) {
-                readingProgressManager.resetProgress(book);
-            }
-        };
-    }
-    
-    /**
-     * 创建ChapterCacheRepository适配器
-     */
-    private ChapterCacheRepository createChapterCacheRepositoryAdapter() {
-        return new ChapterCacheRepository() {
-            @Override
-            @Nullable
-            public String getCachedContent(String bookId, String chapterId) {
-                return chapterCacheManager.getCachedContent(bookId, chapterId);
-            }
-            
-            @Override
-            @Nullable
-            public String getFallbackCachedContent(String bookId, String chapterId) {
-                return chapterCacheManager.getFallbackCachedContent(bookId, chapterId);
-            }
-            
-            @Override
-            public void cacheContent(String bookId, String chapterId, String content) {
-                chapterCacheManager.cacheContent(bookId, chapterId, content);
-            }
-            
-            @Override
-            public void clearCache(String bookId) {
-                chapterCacheManager.clearCache(bookId);
-            }
-            
-            @Override
-            public void checkAndEvictCache() {
-                chapterCacheManager.cleanupCache();
-            }
-            
-            @Override
-            public void clearAllCache() {
-                chapterCacheManager.clearAllCache();
-            }
-            
-            @Override
-            @NotNull
-            public String getCacheDirPath() {
-                return storageManager.getCachePath();
-            }
-            
-            @Override
-            public void cleanupCache() {
-                chapterCacheManager.cleanupCache();
-            }
-            
-            @Override
-            public void cleanupBookCache(String bookId) {
-                chapterCacheManager.clearCache(bookId);
-            }
-        };
+            return module;
+        } catch (Exception e) {
+            LOG.error("获取 RepositoryModule 实例时发生异常", e);
+            // 创建新实例作为备用
+            return new RepositoryModule();
+        }
     }
 }

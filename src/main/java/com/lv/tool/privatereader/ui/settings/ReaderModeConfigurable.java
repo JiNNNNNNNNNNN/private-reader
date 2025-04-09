@@ -65,7 +65,7 @@ public class ReaderModeConfigurable implements Configurable {
             ApplicationManager.getApplication()
                     .getMessageBus()
                     .syncPublisher(ReaderModeSettings.TOPIC)
-                    .readerModeSettingsChanged();
+                    .modeChanged(newValue);
         }
     }
 

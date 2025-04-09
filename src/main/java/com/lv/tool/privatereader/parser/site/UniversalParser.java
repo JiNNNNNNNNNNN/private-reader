@@ -1,12 +1,14 @@
 package com.lv.tool.privatereader.parser.site;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.lv.tool.privatereader.exception.PrivateReaderException;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.common.ChapterAnalyzer;
 import com.lv.tool.privatereader.parser.common.TextDensityAnalyzer;
 import com.lv.tool.privatereader.parser.common.MetadataAnalyzer;
 import com.lv.tool.privatereader.parser.common.TextFormatter;
 import com.lv.tool.privatereader.parser.common.ChapterTitleUtils;
+import com.lv.tool.privatereader.util.SafeHttpRequestExecutor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -47,14 +49,18 @@ public final class UniversalParser implements NovelParser {
             System.setProperty("https.proxyHost", "");
             System.setProperty("https.proxyPort", "");
             
-            this.document = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .timeout(10000)
-                .followRedirects(true)
-                .sslSocketFactory(sslSocketFactory)
-                .ignoreContentType(true)
-                .ignoreHttpErrors(true)
-                .get();
+            // 使用安全的HTTP请求执行器
+            String htmlContent = SafeHttpRequestExecutor.executeGetRequest(url);
+            
+            // 添加显式的 null 检查
+            if (htmlContent == null) {
+                LOG.error("SafeHttpRequestExecutor.executeGetRequest returned null for URL: " + url);
+                // 抛出 IOException 而不是 RuntimeException，以便外层 catch 处理
+                throw new IOException("获取页面内容失败 (返回 null): " + url);
+            }
+                
+            // 使用Jsoup解析获取的HTML内容
+            this.document = Jsoup.parse(htmlContent, url);
             LOG.debug("成功获取页面内容，长度: " + document.html().length());
         } catch (IOException e) {
             LOG.error("连接网址失败: " + url, e);
@@ -112,10 +118,11 @@ public final class UniversalParser implements NovelParser {
                 try {
                     String catalogUrl = link.attr("abs:href");
                     LOG.info("正在尝试解析目录页面: " + catalogUrl);
-                    Document catalogDoc = Jsoup.connect(catalogUrl)
-                        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                        .timeout(10000)
-                        .get();
+                    
+                    // 使用安全的HTTP请求执行器
+                    String catalogHtml = SafeHttpRequestExecutor.executeGetRequest(catalogUrl);
+                        
+                    Document catalogDoc = Jsoup.parse(catalogHtml, catalogUrl);
                     Elements catalogChapters = catalogDoc.select("a[href]");
                     LOG.debug("目录页面中找到链接数量: " + catalogChapters.size() + "，开始分析...");
                     
@@ -158,25 +165,27 @@ public final class UniversalParser implements NovelParser {
     public String parseChapterContent(String chapterId) {
         LOG.debug("开始解析章节内容: " + chapterId);
         try {
+            // 使用同步方法实现
+            return parseChapterContentInternal(chapterId);
+        } catch (Exception e) {
+            LOG.error("解析章节内容时发生错误: " + e.getMessage(), e);
+            throw new PrivateReaderException(
+                "解析章节内容失败: " + e.getMessage(),
+                e,
+                PrivateReaderException.ExceptionType.PARSE_ERROR
+            );
+        }
+    }
+    
+    private String parseChapterContentInternal(String chapterId) {
+        try {
             LOG.info("正在连接章节页面...");
-            // 直接获取原始字节数据
-            byte[] responseBytes = Jsoup.connect(chapterId)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-                .header("Accept-Language", "zh-CN,zh;q=0.9")
-                .header("Cache-Control", "no-cache")
-                .header("Pragma", "no-cache")
-                .header("Referer", url)
-                .header("Cookie", "")
-                .timeout(15000)
-                .maxBodySize(0)
-                .followRedirects(true)
-                .sslSocketFactory(sslSocketFactory)
-                .ignoreContentType(true)
-                .ignoreHttpErrors(true)
-                .execute()
-                .bodyAsBytes();
-
+            
+            // 使用安全的HTTP请求执行器
+            String html = SafeHttpRequestExecutor.executeGetRequest(chapterId);
+                
+            LOG.info("成功获取章节页面内容，长度: " + html.length());
+            
             // 尝试不同的编码解析内容
             Document chapterDoc = null;
             String[] encodings = {"UTF-8", "GBK", "GB2312", "GB18030", "BIG5"};
@@ -186,100 +195,39 @@ public final class UniversalParser implements NovelParser {
 
             for (String encoding : encodings) {
                 try {
-                    String html = new String(responseBytes, encoding);
+                    // 使用获取到的HTML字符串创建Document对象
                     Document doc = Jsoup.parse(html, chapterId);
+                    String content = extractContent(doc);
                     
-                    // 获取正文内容
-                    Element content = doc.selectFirst("div#content1");
-                    if (content == null) {
-                        content = doc.selectFirst("div.content_read");
-                    }
-                    if (content == null) {
-                        content = doc.selectFirst("div.box_con #content");
-                    }
-                    if (content == null) {
-                        content = TextDensityAnalyzer.findContentElement(doc);
-                    }
-                    
-                    if (content != null) {
-                        String text = content.text();
-                        int garbageScore = calculateGarbageScore(text);
-                        LOG.debug(String.format("编码 %s 的乱码评分: %d", encoding, garbageScore));
-                        
+                    if (content != null && !content.isEmpty()) {
+                        int garbageScore = calculateGarbageScore(content);
                         if (garbageScore < minGarbageScore) {
                             minGarbageScore = garbageScore;
-                            bestContent = text;
+                            bestContent = content;
                             bestCharset = encoding;
                             chapterDoc = doc;
                         }
                     }
                 } catch (Exception e) {
-                    LOG.warn("使用编码 " + encoding + " 解析失败: " + e.getMessage());
+                    LOG.warn("使用" + encoding + "解析失败: " + e.getMessage());
                 }
             }
 
-            if (bestCharset != null) {
-                LOG.info("选择最佳编码: " + bestCharset + "，乱码评分: " + minGarbageScore);
-            } else {
-                LOG.warn("未能找到合适的编码，使用默认UTF-8");
-                chapterDoc = Jsoup.parse(new String(responseBytes, "UTF-8"), chapterId);
+            if (bestContent == null || bestContent.isEmpty()) {
+                throw new PrivateReaderException(
+                    "无法解析章节内容，请检查网页格式或编码",
+                    PrivateReaderException.ExceptionType.PARSE_ERROR
+                );
             }
 
-            LOG.info("页面获取成功，开始分析正文内容...");
-            // 首先尝试直接使用特定选择器
-            Element content = chapterDoc.selectFirst("div#content1");
-            if (content == null) {
-                LOG.debug("尝试使用 content1 选择器失败，尝试其他选择器...");
-                content = chapterDoc.selectFirst("div.content_read");
-            }
-            if (content == null) {
-                LOG.debug("尝试使用 content_read 选择器失败，尝试其他选择器...");
-                content = chapterDoc.selectFirst("div.box_con #content");
-            }
-            
-            // 如果特定选择器没有找到内容，使用通用的文本密度分析
-            if (content == null) {
-                LOG.info("常用选择器均未找到内容，切换到智能分析模式...");
-                content = TextDensityAnalyzer.findContentElement(chapterDoc);
-            }
-
-            if (content != null) {
-                LOG.info("已找到正文内容，开始清理...");
-                // 移除广告和无关内容
-                content.select("script, style, a, iframe, div.adsbygoogle, .bottem, .bottem2").remove();
-                
-                String text = content.text();
-                LOG.debug("原始内容长度: " + text.length() + " 字符");
-                
-                // 清理特定的广告文本和无关内容
-                text = text.replaceAll("(?i)(广告|推广|http|www|com|net|org|xyz)[^，。！？]*", "")
-                         .replaceAll("(?i)(八八中文网|88中文网|求书网|新笔趣阁|笔趣阁|顶点小说|番茄小说)[^，。！？]*", "")
-                         .replaceAll("最新章节！", "")
-                         .replaceAll("\\s*([，。！？])\\s*", "$1\n")  // 在标点符号后添加换行
-                         .replaceAll("\\s+", "\n")  // 将多个空白字符替换为换行
-                         .replaceAll("\\n{3,}", "\n\n")  // 限制最大连续换行数
-                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+[章节卷集部篇].*$", "")  // 移除数字章节标题
-                         .replaceAll("^\\s*[0-9]+[、.][^0-9]*$", "")  // 移除数字序号标题
-                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+回.*$", "")  // 移除回数标题
-                         .replaceAll("^\\s*[序楔终][章话].*$", "")  // 移除特殊章节标题
-                         .replaceAll("^\\s*[前序楔引]言.*$", "")  // 移除前言等
-                         .replaceAll("^\\s*[后终]记.*$", "")  // 移除后记等
-                         .replaceAll("^\\s*[卷部篇][0-9零一二三四五六七八九十百千万亿]+.*$", "")  // 移除卷标题
-                         .replaceAll("^\\s*[上中下]篇.*$|^\\s*番外.*$|^\\s*特别篇.*$|^\\s*外传.*$", "")  // 移除特殊篇章标题
-                         .replaceAll("^\\s*[早中午晚]章.*$|^\\s*[春夏秋冬]章.*$", "")  // 移除时间相关章节标题
-                         .replaceAll("^\\s*(间|幕)?插.*$", "")  // 移除插入章节标题
-                         .trim();
-                
-                String formatted = TextFormatter.format(text);
-                LOG.info(String.format("内容处理完成，最终长度: %d 字符", formatted.length()));
-                return formatted;
-            }
-
-            LOG.warn("未能找到有效的正文内容，可能是页面结构发生变化");
-            return "无法识别章节内容，请检查网页结构是否变化";
+            LOG.info("成功解析章节内容，使用编码: " + bestCharset);
+            return bestContent;
         } catch (IOException e) {
-            LOG.error("获取章节内容失败: " + chapterId, e);
-            throw new RuntimeException("获取章节内容失败：" + e.getMessage(), e);
+            throw new PrivateReaderException(
+                "获取章节内容失败: " + e.getMessage(),
+                e,
+                PrivateReaderException.ExceptionType.NETWORK_ERROR
+            );
         }
     }
 
@@ -347,64 +295,152 @@ public final class UniversalParser implements NovelParser {
         }
     }
 
+    private String extractContent(Document doc) {
+        try {
+            // 首先尝试直接使用特定选择器
+            Element content = doc.selectFirst("div#content1");
+            if (content == null) {
+                LOG.debug("尝试使用 content1 选择器失败，尝试其他选择器...");
+                content = doc.selectFirst("div.content_read");
+            }
+            if (content == null) {
+                LOG.debug("尝试使用 content_read 选择器失败，尝试其他选择器...");
+                content = doc.selectFirst("div.box_con #content");
+            }
+            
+            // 如果特定选择器没有找到内容，使用通用的文本密度分析
+            if (content == null) {
+                LOG.info("常用选择器均未找到内容，切换到智能分析模式...");
+                content = TextDensityAnalyzer.findContentElement(doc);
+            }
+
+            if (content != null) {
+                LOG.info("已找到正文内容，开始清理...");
+                // 移除广告和无关内容
+                content.select("script, style, a, iframe, div.adsbygoogle, .bottem, .bottem2").remove();
+                
+                String text = content.text();
+                LOG.debug("原始内容长度: " + text.length() + " 字符");
+                
+                // 清理特定的广告文本和无关内容
+                text = text.replaceAll("(?i)(广告|推广|http|www|com|net|org|xyz)[^，。！？]*", "")
+                         .replaceAll("(?i)(八八中文网|88中文网|求书网|新笔趣阁|笔趣阁|顶点小说|番茄小说)[^，。！？]*", "")
+                         .replaceAll("最新章节！", "")
+                         .replaceAll("\\s*([，。！？])\\s*", "$1\n")  // 在标点符号后添加换行
+                         .replaceAll("\\s+", "\n")  // 将多个空白字符替换为换行
+                         .replaceAll("\\n{3,}", "\n\n")  // 限制最大连续换行数
+                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+[章节卷集部篇].*$", "")  // 移除数字章节标题
+                         .replaceAll("^\\s*[0-9]+[、.][^0-9]*$", "")  // 移除数字序号标题
+                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+回.*$", "")  // 移除回数标题
+                         .replaceAll("^\\s*[序楔终][章话].*$", "")  // 移除特殊章节标题
+                         .replaceAll("^\\s*[前序楔引]言.*$", "")  // 移除前言等
+                         .replaceAll("^\\s*[后终]记.*$", "")  // 移除后记等
+                         .replaceAll("^\\s*[卷部篇][0-9零一二三四五六七八九十百千万亿]+.*$", "")  // 移除卷标题
+                         .replaceAll("^\\s*[上中下]篇.*$|^\\s*番外.*$|^\\s*特别篇.*$|^\\s*外传.*$", "")  // 移除特殊篇章标题
+                         .replaceAll("^\\s*[早中午晚]章.*$|^\\s*[春夏秋冬]章.*$", "")  // 移除时间相关章节标题
+                         .replaceAll("^\\s*(间|幕)?插.*$", "")  // 移除插入章节标题
+                         .trim();
+                
+                String formatted = TextFormatter.format(text);
+                LOG.info(String.format("内容处理完成，最终长度: %d 字符", formatted.length()));
+                return formatted;
+            }
+        } catch (Exception e) {
+            LOG.error("提取内容时发生错误", e);
+        }
+        
+        return null;
+    }
+
+    /**
+     * 计算文本的乱码评分
+     * 分数越低表示乱码可能性越小
+     */
     private int calculateGarbageScore(String text) {
         if (text == null || text.isEmpty()) {
             return Integer.MAX_VALUE;
         }
 
         int score = 0;
-        char[] chars = text.toCharArray();
-        
-        // 1. 检查特殊乱码字符
-        for (char c : chars) {
-            if (c == '\uFFFD' || c == '?' || c == '□' || c == '■' || 
-                c == '\u0000' || c == '\uFFFF' || 
-                (c >= '\uFDD0' && c <= '\uFDEF') ||
-                (c >= '\uFFFE' && c <= '\uFFFF')) {
-                score += 10;
+        // 统计不可打印字符
+        for (char c : text.toCharArray()) {
+            if (!Character.isLetterOrDigit(c) && !Character.isWhitespace(c) && !isPunctuationMark(c)) {
+                score++;
             }
         }
-        
-        // 2. 检查连续的非中文字符
-        int consecutiveNonChinese = 0;
-        for (char c : chars) {
-            if (!isValidChinese(c) && c > 0x7F) {
-                consecutiveNonChinese++;
-                if (consecutiveNonChinese > 2) {
-                    score += 5;
-                }
-            } else {
-                consecutiveNonChinese = 0;
-            }
+
+        // 检查中文字符比例
+        long chineseCount = text.chars()
+            .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
+            .count();
+        double chineseRatio = (double) chineseCount / text.length();
+        if (chineseRatio < 0.5) {  // 如果中文字符比例过低
+            score += 1000;
         }
-        
-        // 3. 检查中文标点符号的合理性
-        boolean hasChinese = false;
-        boolean hasChinesePunctuation = false;
-        for (char c : chars) {
-            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS) {
-                hasChinese = true;
-            }
-            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION) {
-                hasChinesePunctuation = true;
-            }
+
+        // 检查常见乱码特征
+        if (text.contains("\uFFFD")) {  // Unicode替换字符，表示无法解码
+            score += 500;
         }
-        if (hasChinese && !hasChinesePunctuation) {
-            score += 50;  // 有中文但没有中文标点，可能是编码问题
+        if (text.contains("□")) {
+            score += 200;
         }
-        
+        if (text.contains("▯")) {
+            score += 200;
+        }
+        // 检测其他常见乱码字符
+        if (text.contains("锟斤拷") || text.contains("烫烫烫") || text.contains("屯屯屯")) {
+            score += 300;
+        }
+
         return score;
     }
-    
-    private boolean isValidChinese(char c) {
-        // 检查是否是有效的中文字符
-        Character.UnicodeBlock ub = Character.UnicodeBlock.of(c);
-        return ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
-            || ub == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
-            || ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
-            || ub == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
-            || ub == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
-            || ub == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS
-            || ub == Character.UnicodeBlock.GENERAL_PUNCTUATION;
+
+    /**
+     * 判断是否为标点符号
+     */
+    private boolean isPunctuationMark(char c) {
+        // 使用Character类的内置方法检测标点符号
+        if (Character.getType(c) == Character.DASH_PUNCTUATION
+            || Character.getType(c) == Character.START_PUNCTUATION
+            || Character.getType(c) == Character.END_PUNCTUATION
+            || Character.getType(c) == Character.CONNECTOR_PUNCTUATION
+            || Character.getType(c) == Character.OTHER_PUNCTUATION
+            || Character.getType(c) == Character.INITIAL_QUOTE_PUNCTUATION
+            || Character.getType(c) == Character.FINAL_QUOTE_PUNCTUATION) {
+            return true;
+        }
+        
+        // 额外检查一些可能未被上述方法捕获的中文标点符号
+        int[] punctuations = {
+            0x3002, // 。
+            0xFF0C, // ，
+            0xFF01, // ！
+            0xFF1F, // ？
+            0xFF1B, // ；
+            0xFF1A, // ：
+            0x201C, // "
+            0x201D, // "
+            0x2018, // '
+            0x2019, // '
+            0xFF08, // （
+            0xFF09, // ）
+            0x3010, // 【
+            0x3011, // 】
+            0x300A, // 《
+            0x300B, // 》
+            0x3001, // 、
+            0xFF5E, // ～
+            0x2026, // …
+            0x2014, // —
+            0x2015  // ―
+        };
+        
+        for (int p : punctuations) {
+            if (c == p) {
+                return true;
+            }
+        }
+        return false;
     }
 }

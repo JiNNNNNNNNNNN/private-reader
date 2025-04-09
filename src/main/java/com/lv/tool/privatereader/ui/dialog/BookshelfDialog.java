@@ -8,9 +8,8 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
-import com.lv.tool.privatereader.storage.BookStorage;
 import com.lv.tool.privatereader.storage.ReadingProgressManager;
-import com.lv.tool.privatereader.storage.cache.ChapterPreloader;
+import com.lv.tool.privatereader.reader.ReactiveChapterPreloader;
 import com.lv.tool.privatereader.ui.PrivateReaderPanel;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import com.intellij.notification.NotificationType;
@@ -21,6 +20,11 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.RepositoryModule;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.WriteAction;
+import com.lv.tool.privatereader.async.ReactiveTaskManager;
+import com.lv.tool.privatereader.service.BookService;
 
 import javax.swing.*;
 import java.awt.*;
@@ -29,27 +33,31 @@ import java.awt.event.MouseEvent;
 import java.awt.datatransfer.StringSelection;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.time.Duration;
 
 public class BookshelfDialog extends DialogWrapper {
     private final Project project;
     private final JBList<Book> bookList;
-    private final BookStorage bookStorage;
+    private final BookService bookService;
     private final RepositoryModule repositoryModule;
     private final BookRepository bookRepository;
     private JPanel mainPanel;
     private JComboBox<String> sortComboBox;
     private static final String NOTIFICATION_GROUP_ID = "Private Reader";
+    private static final Logger LOG = Logger.getInstance(BookshelfDialog.class);
 
     public BookshelfDialog(Project project) {
         super(project);
         this.project = project;
-        this.bookStorage = project.getService(BookStorage.class);
+        this.bookService = ApplicationManager.getApplication().getService(BookService.class);
         
         // 获取RepositoryModule
-        this.repositoryModule = project.getService(RepositoryModule.class);
+        this.repositoryModule = RepositoryModule.getInstance();
         if (this.repositoryModule != null) {
             this.bookRepository = repositoryModule.getBookRepository();
         } else {
+            LOG.warn("获取 RepositoryModule 失败");
             this.bookRepository = null;
         }
         
@@ -166,17 +174,22 @@ public class BookshelfDialog extends DialogWrapper {
                 );
                 
                 if (result == Messages.YES) {
-                    // 停止预加载任务
-                    ChapterPreloader preloader = project.getService(ChapterPreloader.class);
-                    preloader.stopPreload(selectedBook.getId());
-                    // 删除书籍
-                    removeBook(selectedBook);
-                    // 刷新书架对话框
-                    refreshBookList();
-                    // 刷新阅读面板
-                    PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
-                    if (panel != null) {
-                        panel.refresh();
+                    try {
+                        // 任务管理器将取消预加载任务
+                        ReactiveTaskManager taskManager = ReactiveTaskManager.getInstance();
+                        taskManager.cancelTasksByPrefix("preload-chapters-" + selectedBook.getId());
+                        
+                        // 删除书籍
+                        removeBook(selectedBook);
+                        // 刷新书架对话框
+                        refreshBookList();
+                        // 刷新阅读面板
+                        PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
+                        if (panel != null) {
+                            panel.refresh();
+                        }
+                    } catch (Exception ex) {
+                        LOG.error("移除书籍失败", ex);
                     }
                 }
             }
@@ -251,52 +264,25 @@ public class BookshelfDialog extends DialogWrapper {
                     NotificationType.INFORMATION);
                 
                 try {
-                    // 更新书籍进度
-                    if (selectedBook.getLastReadChapterId() != null) {
-                        selectedBook.setProject(project);
-                        NovelParser parser = selectedBook.getParser();
-                        if (parser != null) {
-                            showNotification(
-                                "正在更新阅读进度...",
-                                NotificationType.INFORMATION);
-                                
-                            List<NovelParser.Chapter> chapters = selectedBook.getCachedChapters();
-                            if (chapters != null) {
-                                // 找到当前章节索引
-                                for (int i = 0; i < chapters.size(); i++) {
-                                    if (selectedBook.getLastReadChapterId().equals(chapters.get(i).url())) {
-                                        selectedBook.setCurrentChapterIndex(i + 1); // 设置为1-based索引
-                                        selectedBook.setTotalChapters(chapters.size());
-                                        // 更新存储
-                                        updateBookInfo(selectedBook);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // 不再在此处更新书籍进度信息或获取章节，交给新的加载方法处理
                     
                     showNotification(
-                        "正在加载章节内容...",
+                        "准备加载书籍进度...",
                         NotificationType.INFORMATION);
                         
-                    // 先设置选中的书籍
-                    panel.getBookList().setSelectedValue(selectedBook, true);
-                    // 禁用ListSelectionListener
-                    panel.disableBookListListener();
-                    // 加载上次阅读的章节
-                    panel.loadLastReadChapter();
-                    // 重新启用ListSelectionListener
-                    panel.enableBookListListener();
+                    // 调用新方法加载指定书籍的进度
+                    panel.loadSpecificBookProgress(selectedBook);
                     
-                    showNotification(
-                        String.format("《%s》加载完成", selectedBook.getTitle()),
-                        NotificationType.INFORMATION);
+                    // 加载完成的通知现在应由 loadSpecificBookProgress 内部或通过事件触发
+                    // 或者保留一个通用的"正在打开"通知，但具体的完成状态需要异步处理
+                    // showNotification(
+                    //     String.format("《%s》加载完成", selectedBook.getTitle()),
+                    //     NotificationType.INFORMATION);
                         
                     close(OK_EXIT_CODE);
                 } catch (Exception e) {
                     showNotification(
-                        String.format("加载《%s》失败: %s", selectedBook.getTitle(), e.getMessage()),
+                        String.format("打开《%s》时出错: %s", selectedBook.getTitle(), e.getMessage()),
                         NotificationType.ERROR);
                 }
             }
@@ -330,26 +316,44 @@ public class BookshelfDialog extends DialogWrapper {
     }
 
     private void updateBookInfo(Book book) {
-        if (bookRepository != null) {
-            bookRepository.updateBook(book);
+        if (bookService != null) {
+            WriteAction.run(() -> bookService.updateBook(book));
         } else {
-            project.getService(BookStorage.class).updateBook(book);
+            LOG.error("BookService 未初始化，无法更新书籍信息");
         }
     }
 
     private void removeBook(Book book) {
-        if (bookRepository != null) {
-            bookRepository.removeBook(book);
+        if (bookService != null) {
+            WriteAction.run(() -> bookService.removeBook(book));
         } else {
-            bookStorage.removeBook(book);
+            LOG.error("BookService 未初始化，无法删除书籍");
         }
     }
 
     private List<Book> getAllBooks() {
-        if (bookRepository != null) {
-            return bookRepository.getAllBooks();
+        if (bookService != null) {
+            return loadBooks();
         } else {
-            return bookStorage.getAllBooks();
+            LOG.error("BookService 未初始化，无法获取书籍列表");
+            return new ArrayList<>();
+        }
+    }
+
+    private List<Book> loadBooks() {
+        BookService bookService = ApplicationManager.getApplication().getService(BookService.class);
+        if (bookService == null) {
+            LOG.error("无法获取 BookService 实例");
+            return new ArrayList<>();
+        }
+        try {
+            // return ReadAction.compute(() -> bookService.getAllBooks()); // Old sync call
+            // Use ReadAction for potential file access, block for sync result needed by dialog
+            return ReadAction.compute(() -> bookService.getAllBooks().collectList().block(Duration.ofSeconds(10))); 
+        } catch (Exception e) {
+            LOG.error("加载书籍列表时出错", e);
+            Messages.showErrorDialog(project, "加载书籍列表失败: " + e.getMessage(), "错误");
+            return new ArrayList<>();
         }
     }
 } 
