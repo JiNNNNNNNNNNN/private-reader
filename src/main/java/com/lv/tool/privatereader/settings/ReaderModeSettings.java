@@ -13,8 +13,13 @@ import com.intellij.openapi.diagnostic.Logger;
 @Service(Service.Level.APP)
 public class ReaderModeSettings extends BaseSettings<ReaderModeSettings> {
     private static final Logger LOG = Logger.getInstance(ReaderModeSettings.class);
-    
-    private boolean notificationMode = false; // 默认为阅读器模式
+
+    public enum Mode {
+        DEFAULT,
+        NOTIFICATION_BAR
+    }
+
+    private Mode currentMode = Mode.DEFAULT; // 默认为阅读器模式
     private boolean autoScroll = true;
     private int scrollSpeed = 50;
     private boolean showLineNumbers = true;
@@ -26,30 +31,41 @@ public class ReaderModeSettings extends BaseSettings<ReaderModeSettings> {
     private int marginTop = 20;
     private int marginBottom = 20;
 
-    public static final Topic<ReaderModeSettingsListener> TOPIC = 
+    public static final Topic<ReaderModeSettingsListener> TOPIC =
             Topic.create("PrivateReaderModeSettings", ReaderModeSettingsListener.class);
 
     public boolean isNotificationMode() {
         ensureSettingsLoaded();
-        return notificationMode;
+        LOG.info("[配置诊断] ReaderModeSettings.isNotificationMode() 返回: " + (currentMode == Mode.NOTIFICATION_BAR));
+        return currentMode == Mode.NOTIFICATION_BAR;
     }
 
     public void setNotificationMode(boolean notificationMode) {
-        boolean changed = this.notificationMode != notificationMode;
-        this.notificationMode = notificationMode;
+        Mode newMode = notificationMode ? Mode.NOTIFICATION_BAR : Mode.DEFAULT;
+        setCurrentMode(newMode);
+    }
+
+    public Mode getCurrentMode() {
+        ensureSettingsLoaded();
+        return currentMode;
+    }
+
+    public void setCurrentMode(Mode newMode) {
+        boolean changed = this.currentMode != newMode;
+        this.currentMode = newMode;
         markDirty();
-        
+
         // 通知监听器
         if (changed) {
             ApplicationManager.getApplication().getMessageBus()
                 .syncPublisher(TOPIC)
-                .modeChanged(notificationMode);
+                .modeChanged(newMode == Mode.NOTIFICATION_BAR); // Still notify boolean for existing listeners
         }
     }
 
     @Override
     protected void copyFrom(ReaderModeSettings source) {
-        this.notificationMode = source.notificationMode;
+        this.currentMode = source.currentMode;
         this.autoScroll = source.autoScroll;
         this.scrollSpeed = source.scrollSpeed;
         this.showLineNumbers = source.showLineNumbers;
@@ -65,7 +81,7 @@ public class ReaderModeSettings extends BaseSettings<ReaderModeSettings> {
     @Override
     protected ReaderModeSettings getDefault() {
         ReaderModeSettings settings = new ReaderModeSettings();
-        settings.notificationMode = false;
+        settings.currentMode = Mode.DEFAULT;
         settings.autoScroll = true;
         settings.scrollSpeed = 50;
         settings.showLineNumbers = true;
@@ -182,4 +198,4 @@ public class ReaderModeSettings extends BaseSettings<ReaderModeSettings> {
     public void save() {
         saveSettings();
     }
-} 
+}

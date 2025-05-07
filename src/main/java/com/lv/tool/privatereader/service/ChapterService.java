@@ -65,18 +65,36 @@ public interface ChapterService {
     Mono<Void> clearAllCache();
     
     /**
+     * 获取章节内容 (同步)
+     *
+     * @param bookId    书籍ID
+     * @param chapterId 章节ID
+     * @return 章节内容
+     */
+    String getChapterContent(@NotNull String bookId, @NotNull String chapterId);
+
+    /**
+     * 获取章节标题 (同步)
+     *
+     * @param bookId    书籍ID
+     * @param chapterId 章节ID
+     * @return 章节标题
+     */
+    String getChapterTitle(@NotNull String bookId, @NotNull String chapterId);
+
+    /**
      * 扩展章节类，包含内容
      */
     class EnhancedChapter extends Chapter {
         private final String content;
-        
+
         public EnhancedChapter(String title, String url, String content) {
             super(title, url);
             this.content = content != null ? content : "";
         }
-        
+
         public String getContent() {
             return content;
         }
     }
-} 
+}

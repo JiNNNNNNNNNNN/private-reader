@@ -258,6 +258,15 @@ public class Book {
         return lastReadPage;
     }
 
+    /**
+     * Gets the last read page number, returning a default value if the stored page is invalid (e.g., <= 0).
+     * @param defaultValue The value to return if lastReadPage is not positive.
+     * @return The last read page number or the default value.
+     */
+    public int getLastReadPageOrDefault(int defaultValue) {
+        return this.lastReadPage > 0 ? this.lastReadPage : defaultValue;
+    }
+
     public void setLastReadPage(int lastReadPage) {
         this.lastReadPage = lastReadPage;
     }

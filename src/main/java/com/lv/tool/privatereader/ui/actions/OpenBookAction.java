@@ -9,7 +9,8 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -25,7 +26,7 @@ public class OpenBookAction extends AnAction implements DumbAware {
         Project project = e.getProject();
         if (project == null) return;
 
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
+        ReaderPanel readerPanel = ReaderToolWindowFactory.findPanel(project);
         if (readerPanel == null) {
             Messages.showWarningDialog(project,
                 "阅读器窗口未初始化",
@@ -33,7 +34,7 @@ public class OpenBookAction extends AnAction implements DumbAware {
             return;
         }
 
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
+        Book selectedBook = readerPanel.getSelectedBook();
         if (selectedBook == null) {
             Messages.showWarningDialog(project,
                 "请先选择要打开的书籍",
@@ -49,7 +50,7 @@ public class OpenBookAction extends AnAction implements DumbAware {
         }
         
         // 加载上次阅读的章节
-        readerPanel.loadLastReadChapter();
+        readerPanel.triggerLoadLastReadState();
     }
     
     @Override
@@ -67,13 +68,13 @@ public class OpenBookAction extends AnAction implements DumbAware {
             return;
         }
 
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
+        ReaderPanel readerPanel = ReaderToolWindowFactory.findPanel(project);
         if (readerPanel == null) {
             e.getPresentation().setEnabled(false);
             return;
         }
 
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
+        Book selectedBook = readerPanel.getSelectedBook();
         e.getPresentation().setEnabled(selectedBook != null);
     }
 } 

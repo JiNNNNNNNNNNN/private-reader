@@ -69,4 +69,14 @@ public interface BookService {
      * @return 完成信号
      */
     Mono<Void> saveReadingProgress(@NotNull Book book, @NotNull String chapterId, String chapterTitle, int position);
-} 
+
+    /**
+     * 同步获取书籍的章节列表 (包含内容)
+     * 注意：这是一个阻塞操作，谨慎使用。
+     *
+     * @param bookId 书籍ID
+     * @return 包含内容的章节列表，如果书籍不存在或获取失败则返回 null 或空列表
+     */
+    @Nullable
+    List<ChapterService.EnhancedChapter> getChaptersSync(@NotNull String bookId);
+}

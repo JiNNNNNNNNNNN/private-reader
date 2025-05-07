@@ -55,22 +55,26 @@ public class ReaderModeConfigurable implements Configurable {
 
     @Override
     public void apply() throws ConfigurationException {
-        boolean oldValue = settings.isNotificationMode();
         boolean newValue = notificationModeCheckBox.isSelected();
-        
-        if (oldValue != newValue) {
+        // 只有在值实际改变时才更新并发送通知
+        if (settings.isNotificationMode() != newValue) {
             settings.setNotificationMode(newValue);
-            
-            // 通知设置变更
-            ApplicationManager.getApplication()
-                    .getMessageBus()
-                    .syncPublisher(ReaderModeSettings.TOPIC)
-                    .modeChanged(newValue);
+            // 保存设置
+            settings.saveSettings();
+            // 通知设置变更 (这个逻辑应该在 setNotificationMode 内部处理，检查确认)
+            // ApplicationManager.getApplication().getMessageBus()
+            //         .syncPublisher(ReaderModeSettings.TOPIC)
+            //         .modeChanged(newValue);
+        } else {
+            // 如果值没有改变，但可能被标记为 dirty（例如，如果 isModified 逻辑更复杂），
+            // 仍然需要保存以清除 dirty 标志。
+            settings.saveSettings();
         }
     }
 
     @Override
     public void reset() {
+        // 从 settings 重新加载值到 UI 组件
         notificationModeCheckBox.setSelected(settings.isNotificationMode());
     }
 } 

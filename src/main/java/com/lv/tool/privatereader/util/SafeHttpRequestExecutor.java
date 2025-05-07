@@ -6,6 +6,7 @@ import com.intellij.util.io.HttpRequests;
 
 import java.io.IOException;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 /**
@@ -20,32 +21,41 @@ public class SafeHttpRequestExecutor {
      *
      * @param url 请求的URL
      * @return HTTP响应内容
-     * @throws IOException 如果请求失败
+     * @throws IOException 如果请求失败或被中断
      */
     public static String executeGetRequest(final String url) throws IOException {
         LOG.info("安全执行HTTP请求: " + url);
+        Future<String> future = ApplicationManager.getApplication().executeOnPooledThread(
+            () -> HttpRequests.request(url)
+                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .connectTimeout(15000)
+                    .readTimeout(15000)
+                    .forceHttps(false)
+                    .connect(request -> request.readString())
+        );
         try {
-            // 使用ApplicationManager的线程池执行，避免在ForkJoinPool中执行
-            Future<String> future = ApplicationManager.getApplication().executeOnPooledThread(
-                new Callable<String>() {
-                    @Override
-                    public String call() throws Exception {
-                        return HttpRequests.request(url)
-                            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                            .connectTimeout(15000)
-                            .readTimeout(15000)
-                            .forceHttps(false)
-                            .connect(request -> request.readString());
-                    }
-                }
-            );
             return future.get();
-        } catch (Exception e) {
-            LOG.error("执行HTTP请求失败: " + e.getMessage(), e);
-            if (e.getCause() instanceof IOException) {
-                throw (IOException) e.getCause();
+        } catch (InterruptedException e) {
+            LOG.warn("执行HTTP请求时线程被中断: " + url, e);
+            Thread.currentThread().interrupt(); // 恢复中断状态
+            // 抛出 IOException 以符合方法签名，但消息表明是中断
+            throw new IOException("HTTP request interrupted: " + url, e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            LOG.error("执行HTTP请求时发生错误: " + url + " Cause: " + (cause != null ? cause.getMessage() : "null"), e);
+            if (cause instanceof IOException) {
+                throw (IOException) cause;
+            } else if (cause instanceof Exception) {
+                 // 包装原始异常信息
+                 throw new IOException("执行HTTP请求时发生内部错误: " + cause.getMessage(), cause);
+            } else {
+                 // 如果 cause 不是 Exception，则包装 ExecutionException
+                 throw new IOException("执行HTTP请求时发生未知错误 (ExecutionException)", e);
             }
-            throw new IOException("执行HTTP请求失败: " + e.getMessage(), e);
+        } catch (Exception e) {
+            // 处理其他可能的、非预期的异常 (例如 CancellationException)
+            LOG.error("获取HTTP请求结果时发生意外错误: " + url, e);
+            throw new IOException("获取HTTP请求结果时发生意外错误: " + e.getMessage(), e);
         }
     }
 
@@ -55,38 +65,44 @@ public class SafeHttpRequestExecutor {
      * @param url 请求的URL
      * @param configurator 请求配置器，可以设置超时、头信息等
      * @return HTTP响应内容
-     * @throws IOException 如果请求失败
+     * @throws IOException 如果请求失败或被中断
      */
     public static String executeGetRequest(final String url, final RequestConfigurator configurator) throws IOException {
         LOG.info("安全执行HTTP请求(带配置): " + url);
-        try {
-            // 使用ApplicationManager的线程池执行，避免在ForkJoinPool中执行
-            Future<String> future = ApplicationManager.getApplication().executeOnPooledThread(
-                new Callable<String>() {
-                    @Override
-                    public String call() throws Exception {
-                        com.intellij.util.io.RequestBuilder builder = HttpRequests.request(url)
-                            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                            .connectTimeout(15000)
-                            .readTimeout(15000)
-                            .forceHttps(false);
-                        
-                        // 应用配置
-                        if (configurator != null) {
-                            configurator.configure(builder);
-                        }
-                        
-                        return builder.connect(request -> request.readString());
-                    }
+        Future<String> future = ApplicationManager.getApplication().executeOnPooledThread(
+            () -> {
+                com.intellij.util.io.RequestBuilder builder = HttpRequests.request(url)
+                        .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                        .connectTimeout(15000)
+                        .readTimeout(15000)
+                        .forceHttps(false);
+                
+                if (configurator != null) {
+                    configurator.configure(builder);
                 }
-            );
-            return future.get();
-        } catch (Exception e) {
-            LOG.error("执行HTTP请求失败: " + e.getMessage(), e);
-            if (e.getCause() instanceof IOException) {
-                throw (IOException) e.getCause();
+                
+                return builder.connect(request -> request.readString());
             }
-            throw new IOException("执行HTTP请求失败: " + e.getMessage(), e);
+        );
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            LOG.warn("执行HTTP请求(带配置)时线程被中断: " + url, e);
+            Thread.currentThread().interrupt(); // 恢复中断状态
+            throw new IOException("HTTP request interrupted (with config): " + url, e);
+        } catch (ExecutionException e) {
+             Throwable cause = e.getCause();
+             LOG.error("执行HTTP请求(带配置)时发生错误: " + url + " Cause: " + (cause != null ? cause.getMessage() : "null"), e);
+             if (cause instanceof IOException) {
+                 throw (IOException) cause;
+             } else if (cause instanceof Exception) {
+                  throw new IOException("执行HTTP请求(带配置)时发生内部错误: " + cause.getMessage(), cause);
+             } else {
+                  throw new IOException("执行HTTP请求(带配置)时发生未知错误 (ExecutionException)", e);
+             }
+        } catch (Exception e) {
+             LOG.error("获取HTTP请求(带配置)结果时发生意外错误: " + url, e);
+             throw new IOException("获取HTTP请求(带配置)结果时发生意外错误: " + e.getMessage(), e);
         }
     }
     

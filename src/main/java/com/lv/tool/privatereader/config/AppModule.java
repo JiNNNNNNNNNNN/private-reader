@@ -8,7 +8,7 @@ import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.repository.StorageRepository;
 import com.lv.tool.privatereader.repository.impl.FileBookRepository;
 import com.lv.tool.privatereader.repository.impl.FileChapterCacheRepository;
-import com.lv.tool.privatereader.repository.impl.FileReadingProgressRepository;
+import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository;
 import com.lv.tool.privatereader.repository.impl.FileStorageRepository;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
@@ -36,7 +36,7 @@ public class AppModule extends AbstractModule {
             // 绑定Repository接口到实现类，并设置为应用级别单例
             bind(StorageRepository.class).to(FileStorageRepository.class).in(Singleton.class);
             bind(BookRepository.class).to(FileBookRepository.class).in(Singleton.class);
-            bind(ReadingProgressRepository.class).to(FileReadingProgressRepository.class).in(Singleton.class);
+            bind(ReadingProgressRepository.class).to(SqliteReadingProgressRepository.class).in(Singleton.class);
             bind(ChapterCacheRepository.class).to(FileChapterCacheRepository.class).in(Singleton.class);
             
             // 绑定Service接口到实现类，并设置为应用级别单例

@@ -7,16 +7,20 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.storage.ReadingProgressManager;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
-import com.lv.tool.privatereader.repository.RepositoryModule;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
+import com.intellij.openapi.application.ApplicationManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 重置阅读进度动作
  */
 public class ResetProgressAction extends AnAction implements DumbAware {
+    private static final Logger LOG = LoggerFactory.getLogger(ResetProgressAction.class);
+
     public ResetProgressAction() {
         super("重置进度", "重置选中书籍的阅读进度", null);
     }
@@ -26,7 +30,7 @@ public class ResetProgressAction extends AnAction implements DumbAware {
         Project project = e.getProject();
         if (project == null) return;
 
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
+        ReaderPanel readerPanel = ReaderToolWindowFactory.findPanel(project);
         if (readerPanel == null) {
             Messages.showWarningDialog(project,
                 "阅读器窗口未初始化",
@@ -34,7 +38,7 @@ public class ResetProgressAction extends AnAction implements DumbAware {
             return;
         }
 
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
+        Book selectedBook = readerPanel.getSelectedBook();
         if (selectedBook == null) {
             Messages.showWarningDialog(project,
                 "请先选择要重置的书籍",
@@ -49,29 +53,26 @@ public class ResetProgressAction extends AnAction implements DumbAware {
 
         if (result != Messages.YES) return;
 
-        // 尝试使用Repository接口
-        RepositoryModule repositoryModule = RepositoryModule.getInstance();
-        if (repositoryModule != null) {
-            ReadingProgressRepository progressRepository = repositoryModule.getReadingProgressRepository();
-            if (progressRepository != null) {
-                progressRepository.resetProgress(selectedBook);
-                readerPanel.refresh();
-                
-                Messages.showInfoMessage(project,
-                    String.format("已重置《%s》的阅读进度", selectedBook.getTitle()),
-                    "重置成功");
-                return;
-            }
+        // Directly get the ReadingProgressRepository service
+        ReadingProgressRepository progressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+        if (progressRepository != null) {
+            // Run the reset operation (which should be quick, but consider background thread if it involved IO)
+             try {
+                 progressRepository.resetProgress(selectedBook);
+                 // Refresh UI after successful reset
+                 readerPanel.refreshChapterList(); // Consider if this needs more specific refresh
+                 
+                 Messages.showInfoMessage(project,
+                     String.format("已重置《%s》的阅读进度", selectedBook.getTitle()),
+                     "重置成功");
+             } catch (Exception ex) {
+                  Messages.showErrorDialog(project, "重置进度时出错: " + ex.getMessage(), "错误");
+                  LOG.error("Error resetting progress for book: " + selectedBook.getId(), ex);
+             }
+        } else {
+             Messages.showErrorDialog(project, "无法获取阅读进度服务，无法重置进度", "错误");
+             LOG.error("Could not get ReadingProgressRepository service.");
         }
-        
-        // 回退到旧的实现
-        ReadingProgressManager progressManager = project.getService(ReadingProgressManager.class);
-        progressManager.resetProgress(selectedBook);
-        readerPanel.refresh();
-        
-        Messages.showInfoMessage(project,
-            String.format("已重置《%s》的阅读进度", selectedBook.getTitle()),
-            "重置成功");
     }
     
     @Override
@@ -89,13 +90,13 @@ public class ResetProgressAction extends AnAction implements DumbAware {
             return;
         }
 
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
+        ReaderPanel readerPanel = ReaderToolWindowFactory.findPanel(project);
         if (readerPanel == null) {
             e.getPresentation().setEnabled(false);
             return;
         }
 
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
+        Book selectedBook = readerPanel.getSelectedBook();
         e.getPresentation().setEnabled(selectedBook != null);
     }
 } 

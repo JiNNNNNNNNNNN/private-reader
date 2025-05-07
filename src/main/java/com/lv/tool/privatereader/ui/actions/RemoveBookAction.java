@@ -3,19 +3,16 @@ package com.lv.tool.privatereader.ui.actions;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
-import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.service.BookService;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.lv.tool.privatereader.async.ReactiveSchedulers;
 
 /**
  * 移除书籍动作
@@ -32,7 +29,7 @@ public class RemoveBookAction extends AnAction implements DumbAware {
         Project project = e.getProject();
         if (project == null) return;
 
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
+        ReaderPanel readerPanel = ReaderToolWindowFactory.findPanel(project);
         if (readerPanel == null) {
             Messages.showWarningDialog(project,
                 "阅读器窗口未初始化",
@@ -40,7 +37,7 @@ public class RemoveBookAction extends AnAction implements DumbAware {
             return;
         }
 
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
+        Book selectedBook = readerPanel.getSelectedBook();
         if (selectedBook == null) {
             Messages.showWarningDialog(project,
                 "请先选择要删除的书籍",
@@ -56,13 +53,12 @@ public class RemoveBookAction extends AnAction implements DumbAware {
             }
 
             bookService.removeBook(selectedBook)
-                .publishOn(ReactiveSchedulers.getInstance().ui())
                 .subscribe(
                     success -> {
                         if (success) {
                             LOG.info("成功删除书籍: " + selectedBook.getTitle());
                             Messages.showInfoMessage(readerPanel, "书籍 '" + selectedBook.getTitle() + "' 已删除。", "删除成功");
-                            readerPanel.refresh();
+                            readerPanel.loadBooks();
                         } else {
                             LOG.warn("删除书籍失败 (返回false): " + selectedBook.getTitle());
                             Messages.showWarningDialog(readerPanel, "无法删除书籍 '" + selectedBook.getTitle() + "'。", "删除失败");
@@ -91,13 +87,13 @@ public class RemoveBookAction extends AnAction implements DumbAware {
             return;
         }
 
-        PrivateReaderPanel readerPanel = PrivateReaderPanel.getInstance(project);
+        ReaderPanel readerPanel = ReaderToolWindowFactory.findPanel(project);
         if (readerPanel == null) {
             e.getPresentation().setEnabled(false);
             return;
         }
 
-        Book selectedBook = readerPanel.getBookList().getSelectedValue();
+        Book selectedBook = readerPanel.getSelectedBook();
         e.getPresentation().setEnabled(selectedBook != null);
     }
 } 

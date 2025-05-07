@@ -4,7 +4,8 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
 
 public class RefreshChaptersAction extends AnAction {
@@ -12,7 +13,7 @@ public class RefreshChaptersAction extends AnAction {
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
         if (project != null) {
-            PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
+            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
             if (panel != null) {
                 panel.refreshChapterList();
             }

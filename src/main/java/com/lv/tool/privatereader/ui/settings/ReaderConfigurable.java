@@ -248,6 +248,9 @@ public class ReaderConfigurable implements Configurable {
             .getMessageBus()
             .syncPublisher(ReaderSettingsListener.TOPIC)
             .settingsChanged();
+
+        // 保存设置
+        settings.saveSettings();
     }
 
     @Override

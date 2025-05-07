@@ -1,47 +1,47 @@
 package com.lv.tool.privatereader.ui.dialog;
 
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationGroupManager;
+import com.intellij.notification.NotificationType;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.lv.tool.privatereader.async.ReactiveTaskManager;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
-import com.lv.tool.privatereader.storage.ReadingProgressManager;
-import com.lv.tool.privatereader.reader.ReactiveChapterPreloader;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
-import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
-import com.intellij.notification.NotificationType;
-import org.jetbrains.annotations.Nullable;
-import com.intellij.notification.NotificationGroupManager;
-import com.intellij.notification.Notification;
-import com.intellij.openapi.application.ApplicationManager;
-import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import com.lv.tool.privatereader.repository.BookRepository;
-import com.lv.tool.privatereader.repository.RepositoryModule;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.WriteAction;
-import com.lv.tool.privatereader.async.ReactiveTaskManager;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
+import com.lv.tool.privatereader.ui.ReaderPanel;
+import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
+import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.datatransfer.StringSelection;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.ArrayList;
-import java.time.Duration;
 
 public class BookshelfDialog extends DialogWrapper {
     private final Project project;
     private final JBList<Book> bookList;
     private final BookService bookService;
-    private final RepositoryModule repositoryModule;
     private final BookRepository bookRepository;
+    private final ReadingProgressRepository readingProgressRepository;
     private JPanel mainPanel;
     private JComboBox<String> sortComboBox;
     private static final String NOTIFICATION_GROUP_ID = "Private Reader";
@@ -52,13 +52,12 @@ public class BookshelfDialog extends DialogWrapper {
         this.project = project;
         this.bookService = ApplicationManager.getApplication().getService(BookService.class);
         
-        // 获取RepositoryModule
-        this.repositoryModule = RepositoryModule.getInstance();
-        if (this.repositoryModule != null) {
-            this.bookRepository = repositoryModule.getBookRepository();
-        } else {
-            LOG.warn("获取 RepositoryModule 失败");
-            this.bookRepository = null;
+        // Get repositories directly using ApplicationManager
+        this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
+        this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+        
+        if (this.bookRepository == null || this.readingProgressRepository == null) {
+            LOG.error("Failed to get required repository services (BookRepository or ReadingProgressRepository).");
         }
         
         this.bookList = new JBList<>();
@@ -154,8 +153,18 @@ public class BookshelfDialog extends DialogWrapper {
                 );
                 
                 if (result == Messages.YES) {
-                    project.getService(ReadingProgressManager.class).resetProgress(selectedBook);
-                    refreshBookList();
+                    if (readingProgressRepository != null) {
+                         try {
+                             readingProgressRepository.resetProgress(selectedBook);
+                             refreshBookList();
+                             Messages.showInfoMessage(project, "已重置进度", "成功");
+                         } catch (Exception ex) {
+                              Messages.showErrorDialog(project, "重置进度时出错: " + ex.getMessage(), "错误");
+                              LOG.error("Error resetting progress in dialog for book: " + selectedBook.getId(), ex);
+                         }
+                    } else {
+                         Messages.showErrorDialog(project, "无法获取阅读进度服务", "错误");
+                    }
                 }
             }
         });
@@ -184,9 +193,9 @@ public class BookshelfDialog extends DialogWrapper {
                         // 刷新书架对话框
                         refreshBookList();
                         // 刷新阅读面板
-                        PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
+                        ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
                         if (panel != null) {
-                            panel.refresh();
+                            panel.loadBooks();
                         }
                     } catch (Exception ex) {
                         LOG.error("移除书籍失败", ex);
@@ -257,34 +266,16 @@ public class BookshelfDialog extends DialogWrapper {
     private void openSelectedBook() {
         Book selectedBook = bookList.getSelectedValue();
         if (selectedBook != null) {
-            PrivateReaderPanel panel = PrivateReaderPanel.getInstance(project);
+            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
             if (panel != null) {
-                showNotification(
-                    String.format("正在打开《%s》...", selectedBook.getTitle()),
-                    NotificationType.INFORMATION);
-                
-                try {
-                    // 不再在此处更新书籍进度信息或获取章节，交给新的加载方法处理
-                    
-                    showNotification(
-                        "准备加载书籍进度...",
-                        NotificationType.INFORMATION);
-                        
-                    // 调用新方法加载指定书籍的进度
-                    panel.loadSpecificBookProgress(selectedBook);
-                    
-                    // 加载完成的通知现在应由 loadSpecificBookProgress 内部或通过事件触发
-                    // 或者保留一个通用的"正在打开"通知，但具体的完成状态需要异步处理
-                    // showNotification(
-                    //     String.format("《%s》加载完成", selectedBook.getTitle()),
-                    //     NotificationType.INFORMATION);
-                        
-                    close(OK_EXIT_CODE);
-                } catch (Exception e) {
-                    showNotification(
-                        String.format("打开《%s》时出错: %s", selectedBook.getTitle(), e.getMessage()),
-                        NotificationType.ERROR);
+                // 确保工具窗口可见
+                ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("PrivateReader");
+                if (toolWindow != null) {
+                    toolWindow.show(null);
                 }
+                panel.selectBookAndLoadProgress(selectedBook);
+            } else {
+                Messages.showWarningDialog(project, "阅读器面板未初始化", "错误");
             }
         }
     }

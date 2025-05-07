@@ -7,7 +7,7 @@
   <description><![CDATA[
     <h2>Introduction</h2>
     A lightweight novel reading plugin for JetBrains IDEs that supports content extraction from various novel websites.
-    
+
     <h2>Key Features</h2>
     <ul>
       <li>Smart Content Extraction
@@ -38,7 +38,7 @@
         </ul>
       </li>
     </ul>
-    
+
     <h2>Usage</h2>
     <ol>
       <li>Find "Private Reader" options in the Tools menu</li>
@@ -179,42 +179,37 @@
   <depends>com.intellij.modules.platform</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <!-- 移除原有的窗口，只保留响应式窗口 -->
+    <!-- Tool window with updated factory -->
     <toolWindow id="PrivateReader" secondary="true" icon="com.lv.tool.privatereader.ui.PrivateReaderIcons.TOOL_WINDOW" anchor="right"
-                factoryClass="com.lv.tool.privatereader.ui.ReactiveReaderToolWindowFactory"/>
-    
-    <!-- 添加应用初始化监听器 -->
-    <applicationInitializedListener implementation="com.lv.tool.privatereader.initialization.PrivateReaderInitializer"/>
-    
-    <!-- <applicationService serviceImplementation="com.lv.tool.privatereader.storage.BookStorage"/> -->
-    <applicationService serviceImplementation="com.lv.tool.privatereader.storage.ReadingProgressManager"/>
-    <applicationService serviceImplementation="com.lv.tool.privatereader.storage.StorageManager"/>
-    <applicationService serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheManager"/>
-    
+                factoryClass="com.lv.tool.privatereader.ui.ReaderToolWindowFactory"/>
+
+    <!-- Initializer (name wasn't changed) -->
+    <appLifecycleListener implementation="com.lv.tool.privatereader.initialization.PrivateReaderAppLifecycleListener"/>
+
     <!-- 添加源管理器服务 -->
     <applicationService serviceInterface="com.lv.tool.privatereader.source.SourceManager"
                    serviceImplementation="com.lv.tool.privatereader.source.impl.DefaultSourceManager"/>
-    
+
     <!-- 只保留响应式预加载器 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.reader.ReactiveChapterPreloader"/>
-    
+
     <!-- Repository Module -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.repository.RepositoryModule"/>
-    
+
     <!-- 依赖注入服务 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.config.ServiceLocator"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.config.ServiceModule"/>
-    
+
     <!-- Repository implementations -->
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.StorageRepository" 
+    <applicationService serviceInterface="com.lv.tool.privatereader.repository.StorageRepository"
                    serviceImplementation="com.lv.tool.privatereader.repository.impl.FileStorageRepository"/>
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.BookRepository" 
+    <applicationService serviceInterface="com.lv.tool.privatereader.repository.BookRepository"
                    serviceImplementation="com.lv.tool.privatereader.repository.impl.FileBookRepository"/>
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReadingProgressRepository" 
-                   serviceImplementation="com.lv.tool.privatereader.repository.impl.FileReadingProgressRepository"/>
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ChapterCacheRepository" 
+    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReadingProgressRepository"
+                   serviceImplementation="com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository"/>
+    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ChapterCacheRepository"
                    serviceImplementation="com.lv.tool.privatereader.storage.cache.ChapterCacheAdapter"/>
-    
+
     <!-- Correct Service Registrations -->
     <applicationService serviceInterface="com.lv.tool.privatereader.service.BookService"
                         serviceImplementation="com.lv.tool.privatereader.service.impl.BookServiceImpl"/>
@@ -222,99 +217,109 @@
                         serviceImplementation="com.lv.tool.privatereader.service.impl.ChapterServiceImpl"/>
     <applicationService serviceInterface="com.lv.tool.privatereader.service.NotificationService"
                         serviceImplementation="com.lv.tool.privatereader.service.impl.NotificationServiceImpl"/>
-    
+
     <!-- 添加响应式章节缓存Repository -->
-    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository" 
+    <applicationService serviceInterface="com.lv.tool.privatereader.repository.ReactiveChapterCacheRepository"
                    serviceImplementation="com.lv.tool.privatereader.repository.impl.ReactiveFileChapterCacheRepository"/>
-    
+
     <applicationService serviceImplementation="com.lv.tool.privatereader.config.PrivateReaderConfig"/>
-    
+
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.PluginSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.ReaderSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.ReaderModeSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.NotificationReaderSettings"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.settings.CacheSettings"/>
-    
+
+    <!-- Notification Group Registration -->
+    <notificationGroup id="Private Reader" displayId="Private Reader" displayType="BALLOON"/>
+
     <applicationConfigurable
             parentId="tools"
             instance="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             id="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             displayName="Private Reader"/>
-            
+
     <applicationConfigurable
             parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             instance="com.lv.tool.privatereader.ui.settings.PluginConfigurable"
             id="com.lv.tool.privatereader.ui.settings.PluginConfigurable"
             displayName="插件设置"/>
-            
+
     <applicationConfigurable
             parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             instance="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
             id="com.lv.tool.privatereader.ui.settings.ReaderConfigurable"
             displayName="字体设置"/>
-            
+
     <applicationConfigurable
             parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             instance="com.lv.tool.privatereader.ui.settings.NotificationReaderConfigurable"
             id="com.lv.tool.privatereader.ui.settings.NotificationReaderConfigurable"
             displayName="通知栏阅读设置"/>
-            
+
     <applicationConfigurable
             parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             instance="com.lv.tool.privatereader.ui.settings.ReaderModeConfigurable"
             id="com.lv.tool.privatereader.ui.settings.ReaderModeConfigurable"
             displayName="阅读模式设置"/>
-            
+
     <applicationConfigurable
             parentId="com.lv.tool.privatereader.ui.settings.MainConfigurable"
             instance="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
             id="com.lv.tool.privatereader.ui.settings.CacheConfigurable"
             displayName="缓存设置"/>
-            
-    <applicationService serviceImplementation="com.intellij.openapi.diagnostic.Logger"/>
-    
-    <projectActivity implementation="com.lv.tool.privatereader.startup.PrivateReaderProjectActivity"/>
-    
-    <notificationGroup id="PrivateReader" displayType="BALLOON"/>
-    
+
+    <!-- Notification Group Registration -->
+    <notificationGroup id="PrivateReader" displayType="NONE"/>
+
     <!-- 响应式服务 -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.async.ReactiveTaskManager"/>
     <applicationService serviceImplementation="com.lv.tool.privatereader.async.ReactiveSchedulers"/>
+    <!-- 添加新的模式切换服务 -->
+    <applicationService serviceImplementation="com.lv.tool.privatereader.service.ReaderModeSwitcher"/>
+    <!-- 添加通知栏模式服务 -->
+    <applicationService serviceImplementation="com.lv.tool.privatereader.service.NotificationBarModeService"/>
   </extensions>
 
+  <!-- Add Project Listener Registration -->
+  <projectListeners>
+    <listener class="com.lv.tool.privatereader.listener.ProjectOpenListener"
+              topic="com.intellij.openapi.project.ProjectManagerListener"/>
+  </projectListeners>
+
   <actions>
-    <group id="PrivateReader.Group" 
-           text="Private Reader" 
+    <group id="PrivateReader.Group"
+           text="Private Reader"
            description="Private Reader plugin menu"
            popup="true">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
-      
+
       <action id="PrivateReader.ShowBookshelf"
               class="com.lv.tool.privatereader.ui.actions.ShowBookshelfAction"
               text="书架"
               description="显示书架窗口"
               icon="AllIcons.Actions.Show"/>
-              
-      <action id="PrivateReader.AddBook" 
-              class="com.lv.tool.privatereader.ui.actions.AddBookAction" 
-              text="添加书籍" 
+
+      <action id="PrivateReader.AddBook"
+              class="com.lv.tool.privatereader.ui.actions.AddBookAction"
+              text="添加书籍"
               description="添加新书籍到书架"
               icon="AllIcons.General.Add"/>
-              
+
       <action id="PrivateReader.ShowChapterList"
               class="com.lv.tool.privatereader.ui.actions.ShowChapterListAction"
               text="章节列表"
               description="显示当前书籍的章节列表"
               icon="AllIcons.Actions.ListFiles"/>
-              
+
       <separator/>
-      
+
       <action id="PrivateReader.ToggleReadingMode"
               class="com.lv.tool.privatereader.ui.actions.ToggleReadingModeAction"
               text="切换阅读模式"
               description="在通知栏模式和阅读器模式之间切换"
               icon="AllIcons.Actions.Preview"/>
-              
+
       <action id="PrivateReader.ClearScreen"
               class="com.lv.tool.privatereader.ui.actions.ClearScreenAction"
               text="清屏"
@@ -322,7 +327,7 @@
               icon="AllIcons.Actions.GC">
         <keyboard-shortcut first-keystroke="control 1" keymap="$default"/>
       </action>
-              
+
       <action id="PrivateReader.PrevPage"
               class="com.lv.tool.privatereader.ui.actions.PrevPageAction"
               text="上一页"
@@ -330,7 +335,7 @@
               icon="AllIcons.Actions.Back">
         <keyboard-shortcut first-keystroke="control 2" keymap="$default"/>
       </action>
-      
+
       <action id="PrivateReader.PrevChapter"
               class="com.lv.tool.privatereader.ui.actions.PrevChapterAction"
               text="上一章"
@@ -338,7 +343,7 @@
               icon="AllIcons.Actions.Back">
         <keyboard-shortcut first-keystroke="alt LEFT" keymap="$default"/>
       </action>
-      
+
       <action id="PrivateReader.NextChapter"
               class="com.lv.tool.privatereader.ui.actions.NextChapterAction"
               text="下一章"
@@ -346,7 +351,7 @@
               icon="AllIcons.Actions.Forward">
         <keyboard-shortcut first-keystroke="alt RIGHT" keymap="$default"/>
       </action>
-              
+
       <action id="PrivateReader.NextPage"
               class="com.lv.tool.privatereader.ui.actions.NextPageAction"
               text="下一页"
@@ -354,7 +359,7 @@
               icon="AllIcons.Actions.Forward">
         <keyboard-shortcut first-keystroke="control 3" keymap="$default"/>
       </action>
-              
+
       <action id="PrivateReader.RefreshChapterContent"
               class="com.lv.tool.privatereader.ui.actions.RefreshChapterContentAction"
               text="刷新章节内容"
@@ -362,35 +367,41 @@
               icon="AllIcons.Actions.Refresh">
         <keyboard-shortcut first-keystroke="control 4" keymap="$default"/>
       </action>
-              
+
       <separator/>
-      
+
       <action id="PrivateReader.PluginSettings"
               class="com.lv.tool.privatereader.ui.actions.OpenPluginSettingsAction"
               text="插件设置"
               description="打开插件设置"
               icon="AllIcons.General.Settings"/>
-              
+
       <action id="PrivateReader.FontSettings"
               class="com.lv.tool.privatereader.ui.actions.OpenFontSettingsAction"
               text="字体设置"
               description="打开字体设置"
               icon="AllIcons.Actions.Preview"/>
-              
+
       <action id="PrivateReader.ReaderModeSettings"
               class="com.lv.tool.privatereader.ui.actions.OpenReaderModeSettingsAction"
               text="阅读模式设置"
               description="打开阅读模式设置"
               icon="AllIcons.Actions.ToggleSoftWrap"/>
-              
+
       <action id="PrivateReader.CacheSettings"
               class="com.lv.tool.privatereader.ui.actions.OpenCacheSettingsAction"
               text="缓存设置"
               description="打开缓存设置"
               icon="AllIcons.General.GearPlain"/>
-              
+
       <separator/>
-      
+
+      <action id="PrivateReader.Diagnostic"
+              class="com.lv.tool.privatereader.ui.actions.DiagnosticAction"
+              text="配置诊断"
+              description="诊断和修复配置问题"
+              icon="AllIcons.Debugger.Db_muted_breakpoint"/>
+
       <action id="PrivateReader.About"
               class="com.lv.tool.privatereader.ui.actions.AboutAction"
               text="关于"

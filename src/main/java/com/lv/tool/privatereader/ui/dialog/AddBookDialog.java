@@ -16,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
 import com.intellij.openapi.application.ApplicationManager;
-import com.lv.tool.privatereader.ui.PrivateReaderPanel;
+import com.lv.tool.privatereader.events.BookEvents;
 
 import javax.swing.*;
 import java.awt.*;
@@ -114,7 +114,7 @@ public class AddBookDialog extends DialogWrapper {
                             dispose(); // 关闭对话框
                             // 通过事件总线通知刷新书架
                             ApplicationManager.getApplication().getMessageBus()
-                                .syncPublisher(PrivateReaderPanel.BookDataListener.BOOK_DATA_TOPIC).bookDataLoaded();
+                                .syncPublisher(BookEvents.BookDataListener.BOOK_DATA_TOPIC).bookDataLoaded();
                         } else {
                             LOG.warn("添加书籍失败 (返回 false): " + book.getTitle());
                             Messages.showWarningDialog(this.project, "添加书籍失败，请检查URL或稍后再试。", "添加失败");

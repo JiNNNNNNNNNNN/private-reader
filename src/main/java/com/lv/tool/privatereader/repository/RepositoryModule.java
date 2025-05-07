@@ -5,12 +5,14 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.repository.impl.FileBookRepository;
 import com.lv.tool.privatereader.repository.impl.FileChapterCacheRepository;
-import com.lv.tool.privatereader.repository.impl.FileReadingProgressRepository;
+import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository;
 import com.lv.tool.privatereader.repository.impl.FileStorageRepository;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.intellij.util.messages.MessageBus;
 // REMOVE: import com.lv.tool.privatereader.events.BookDataListener;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * 存储仓库模块
@@ -19,6 +21,7 @@ import com.intellij.util.messages.MessageBus;
  * 使用依赖注入模式，确保各个Repository之间的依赖关系正确。
  */
 @Service(Service.Level.APP)
+@Singleton
 public final class RepositoryModule {
     private static final Logger LOG = Logger.getInstance(RepositoryModule.class);
     private static volatile RepositoryModule instance;
@@ -28,128 +31,98 @@ public final class RepositoryModule {
     private ReadingProgressRepository readingProgressRepository;
     private ChapterCacheRepository chapterCacheRepository;
     private volatile boolean dataReady = false; // Add dataReady flag
+    private boolean initializationOk = true;
     
+    @Inject
     public RepositoryModule() {
-        LOG.info("初始化应用级别的 RepositoryModule");
-        boolean initializationOk = true;
-        
-        try {
-            // 先创建核心的 StorageRepository
-            try {
-                this.storageRepository = ApplicationManager.getApplication().getService(StorageRepository.class);
-                if (this.storageRepository == null) {
-                    LOG.warn("未能从应用服务获取 StorageRepository，创建新实例");
-                    this.storageRepository = new FileStorageRepository();
-                    if (this.storageRepository == null) {
-                        LOG.error("创建 FileStorageRepository 新实例失败！");
-                        initializationOk = false;
-                    } else {
-                        LOG.info("成功创建 FileStorageRepository 实例");
-                    }
-                } else {
-                    LOG.info("成功从应用服务获取 StorageRepository 实例");
-                }
-            } catch (Exception e) {
-                LOG.error("获取或创建 StorageRepository 失败，尝试创建新实例", e);
-                try {
-                    this.storageRepository = new FileStorageRepository();
-                    if (this.storageRepository == null) {
-                        LOG.error("创建 FileStorageRepository 新实例也失败！");
-                        initializationOk = false;
-                    } else {
-                        LOG.info("成功创建 FileStorageRepository 实例 (catch block)");
-                    }
-                } catch (Exception e2) {
-                    LOG.error("创建 FileStorageRepository 新实例时发生严重错误！", e2);
-                    initializationOk = false;
-                }
-            }
-            if (this.storageRepository == null) {
-                LOG.error("StorageRepository 最终未能初始化！");
-                initializationOk = false;
-            }
-            
-            // 创建 BookRepository (依赖 StorageRepository)
-            try {
-                this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
-                if (this.bookRepository == null) {
-                    LOG.warn("未能从应用服务获取 BookRepository，创建新实例");
-                    if (this.storageRepository != null) {
-                        this.bookRepository = new FileBookRepository(ApplicationManager.getApplication(), this.storageRepository);
-                        if (this.bookRepository == null) {
-                            LOG.error("创建 FileBookRepository 新实例失败！");
-                            initializationOk = false;
-                        } else {
-                            LOG.info("成功创建 FileBookRepository 实例");
-                        }
-                    } else {
-                        LOG.error("无法创建 FileBookRepository，因为 StorageRepository 未初始化！");
-                        initializationOk = false;
-                    }
-                } else {
-                    LOG.info("成功从应用服务获取 BookRepository 实例");
-                }
-            } catch (Exception e) {
-                LOG.error("获取或创建 BookRepository 失败，尝试创建新实例", e);
-                if (this.storageRepository != null) {
-                    try {
-                        this.bookRepository = new FileBookRepository(ApplicationManager.getApplication(), this.storageRepository);
-                        if (this.bookRepository == null) {
-                            LOG.error("创建 FileBookRepository 新实例也失败！");
-                            initializationOk = false;
-                        } else {
-                            LOG.info("成功创建 FileBookRepository 实例 (catch block)");
-                        }
-                    } catch (Exception e2) {
-                        LOG.error("创建 FileBookRepository 新实例时发生严重错误！", e2);
-                        initializationOk = false;
-                    }
-                } else {
-                    LOG.error("无法在 catch 块中创建 FileBookRepository，因为 StorageRepository 未初始化！");
-                    initializationOk = false;
-                }
-            }
-            if (this.bookRepository == null) {
-                LOG.error("BookRepository 最终未能初始化！");
-                initializationOk = false;
-            }
-            
-            // 创建 ReadingProgressRepository
-            try {
-                this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
-                if (this.readingProgressRepository == null) {
-                    LOG.warn("未能从应用服务获取 ReadingProgressRepository，创建新实例");
-                    this.readingProgressRepository = new FileReadingProgressRepository(ApplicationManager.getApplication());
-                    if (this.readingProgressRepository == null) {
-                        LOG.error("创建 FileReadingProgressRepository 新实例失败！");
-                        initializationOk = false;
-                    } else {
-                        LOG.info("成功创建 FileReadingProgressRepository 实例");
-                    }
-                } else {
-                    LOG.info("成功从应用服务获取 ReadingProgressRepository 实例");
-                }
-            } catch (Exception e) {
-                LOG.error("获取或创建 ReadingProgressRepository 失败，尝试创建新实例", e);
-                try {
-                    this.readingProgressRepository = new FileReadingProgressRepository(ApplicationManager.getApplication());
-                    if (this.readingProgressRepository == null) {
-                        LOG.error("创建 FileReadingProgressRepository 新实例也失败！");
-                        initializationOk = false;
-                    } else {
-                        LOG.info("成功创建 FileReadingProgressRepository 实例 (catch block)");
-                    }
-                } catch (Exception e2) {
-                    LOG.error("创建 FileReadingProgressRepository 新实例时发生严重错误！", e2);
-                    initializationOk = false;
-                }
-            }
-            if (this.readingProgressRepository == null) {
-                LOG.error("ReadingProgressRepository 最终未能初始化！");
-                initializationOk = false;
-            }
-            
-            // 创建 ChapterCacheRepository (依赖 StorageRepository)
+        LOG.info("RepositoryModule 初始化...");
+        // 延迟初始化仓库实例
+        // initializeRepositoriesLazily(); // 改为在 get 方法中按需初始化
+    }
+    
+    // 确保在使用前进行初始化
+    private void ensureInitialized() {
+        // 可以在这里添加一个全局的初始化锁，如果多线程访问get方法可能在初始化完成前发生
+        if (storageRepository == null) initializeStorageRepository();
+        if (bookRepository == null) initializeBookRepository();
+        if (readingProgressRepository == null) initializeReadingProgressRepository();
+        if (chapterCacheRepository == null) initializeChapterCacheRepository();
+        if (!initializationOk) {
+             LOG.error("仓库模块初始化失败，部分仓库可能不可用。");
+             // Consider throwing an exception or setting a state
+        }
+    }
+
+    private void initializeStorageRepository() {
+        if (storageRepository == null) {
+             try {
+                 this.storageRepository = ApplicationManager.getApplication().getService(StorageRepository.class);
+                 if (this.storageRepository == null) {
+                     LOG.warn("未能从应用服务获取 StorageRepository，创建新实例");
+                     this.storageRepository = new FileStorageRepository();
+                     if (this.storageRepository == null) {
+                          LOG.error("创建 FileStorageRepository 新实例失败！");
+                          initializationOk = false;
+                     } else {
+                          LOG.info("成功创建 FileStorageRepository 实例");
+                     }
+                 } else {
+                     LOG.info("成功获取 StorageRepository 服务实例");
+                 }
+             } catch (Exception e) {
+                 LOG.error("初始化 StorageRepository 时出错", e);
+                 initializationOk = false;
+             }
+        }
+    }
+    
+    private void initializeBookRepository() {
+         if (bookRepository == null) {
+             initializeStorageRepository(); // 调用正确的初始化方法
+             if (!initializationOk) return; // 如果依赖初始化失败，则无法继续
+             try {
+                 this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
+                 if (this.bookRepository == null) {
+                     LOG.warn("未能从应用服务获取 BookRepository，创建新实例");
+                     this.bookRepository = new FileBookRepository(this.storageRepository); // 需要 StorageRepository
+                     if (this.bookRepository == null) {
+                          LOG.error("创建 FileBookRepository 新实例失败！");
+                          initializationOk = false;
+                     } else {
+                          LOG.info("成功创建 FileBookRepository 实例");
+                     }
+                 } else {
+                      LOG.info("成功获取 BookRepository 服务实例");
+                 }
+             } catch (Exception e) {
+                  LOG.error("初始化 BookRepository 时出错", e);
+                  initializationOk = false;
+             }
+         }
+    }
+    
+    private void initializeReadingProgressRepository() {
+         if (readingProgressRepository == null) {
+             try {
+                 // 总是尝试从服务容器获取，因为它应该是通过 @Service 和绑定正确提供的
+                 this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+                 if (this.readingProgressRepository == null) {
+                     // 如果服务容器没有提供实例（可能绑定失败或类未找到），记录错误。
+                     // 不再尝试手动创建，因为它的依赖（DatabaseManager）也应该由容器管理。
+                     LOG.error("未能从应用服务获取 ReadingProgressRepository 实例。请检查服务绑定和服务类是否正确。");
+                     initializationOk = false; 
+                 } else {
+                     LOG.info("成功获取 ReadingProgressRepository 服务实例");
+                 }
+             } catch (Exception e) {
+                 LOG.error("获取 ReadingProgressRepository 服务实例时出错", e);
+                 initializationOk = false;
+             }
+         }
+    }
+    
+    private void initializeChapterCacheRepository() {
+        if (chapterCacheRepository == null) {
             try {
                 this.chapterCacheRepository = ApplicationManager.getApplication().getService(ChapterCacheRepository.class);
                 if (this.chapterCacheRepository == null) {
@@ -193,31 +166,6 @@ public final class RepositoryModule {
                 LOG.error("ChapterCacheRepository 最终未能初始化！");
                 initializationOk = false;
             }
-            
-        } catch (Throwable t) {
-            LOG.error("初始化 RepositoryModule 时发生严重错误", t);
-            initializationOk = false;
-        }
-        
-        // 记录最终初始化结果
-        LOG.info("RepositoryModule 初始化完成，最终状态: " +
-                "StorageRepository=" + (storageRepository != null ? "成功" : "失败") + ", " +
-                "BookRepository=" + (bookRepository != null ? "成功" : "失败") + ", " +
-                "ReadingProgressRepository=" + (readingProgressRepository != null ? "成功" : "失败") + ", " +
-                "ChapterCacheRepository=" + (chapterCacheRepository != null ? "成功" : "失败") + ". " + 
-                (initializationOk ? "所有仓库初始化成功。" : "部分或全部仓库初始化失败！"));
-                
-        // If all repositories initialized successfully, mark data as ready and publish event
-        if (initializationOk) {
-            this.dataReady = true;
-            LOG.info("数据已准备就绪 (dataReady=true)，发布 BOOK_DATA_TOPIC 事件...");
-            // TODO: Restore event publishing once BookDataListener is correctly placed in events package
-            // MessageBus messageBus = ApplicationManager.getApplication().getMessageBus();
-            // BookDataListener publisher = messageBus.syncPublisher(BookDataListener.BOOK_DATA_TOPIC);
-            // publisher.bookDataLoaded();
-            LOG.info("事件发布逻辑已暂时注释。"); // Adjusted log message
-        } else {
-             LOG.warn("部分仓库初始化失败，数据未完全就绪，不发布事件。");
         }
     }
     

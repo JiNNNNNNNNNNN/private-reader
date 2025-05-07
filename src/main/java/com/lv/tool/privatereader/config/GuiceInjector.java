@@ -3,6 +3,13 @@ package com.lv.tool.privatereader.config;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.intellij.openapi.diagnostic.Logger;
+import com.lv.tool.privatereader.repository.*;
+import com.lv.tool.privatereader.repository.impl.FileBookRepository;
+import com.lv.tool.privatereader.repository.impl.FileChapterCacheRepository;
+import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository;
+import com.lv.tool.privatereader.repository.impl.FileStorageRepository;
+import com.lv.tool.privatereader.service.*;
+import com.lv.tool.privatereader.service.impl.*;
 
 /**
  * Guice注入器管理类
@@ -16,6 +23,10 @@ public class GuiceInjector {
     private static Injector injector;
     private static boolean initialized = false;
     
+    static {
+        initialize();
+    }
+    
     /**
      * 初始化Guice注入器
      * 
@@ -25,32 +36,30 @@ public class GuiceInjector {
      * @return 是否成功初始化
      */
     public static synchronized boolean initialize() {
-        if (injector == null) {
-            try {
-                LOG.info("初始化应用级别的Guice注入器");
-                injector = Guice.createInjector(new AppModule());
-                initialized = true;
-                LOG.info("应用级别的Guice注入器初始化完成");
-                return true;
-            } catch (Exception e) {
-                LOG.error("初始化Guice注入器失败，尝试使用备用模块", e);
-                
-                // 尝试使用备用模块
-                try {
-                    LOG.info("使用备用模块初始化Guice注入器");
-                    injector = Guice.createInjector(createFallbackModule());
-                    initialized = true;
-                    LOG.info("使用备用模块初始化Guice注入器成功");
-                    return true;
-                } catch (Exception e2) {
-                    LOG.error("使用备用模块初始化Guice注入器也失败", e2);
-                    initialized = false;
-                    return false;
-                }
-            }
-        } else {
-            LOG.info("Guice注入器已经初始化，跳过重复初始化");
+        if (initialized) {
             return true;
+        }
+        try {
+            LOG.info("初始化应用级别的Guice注入器");
+            injector = Guice.createInjector(new AppModule());
+            initialized = true;
+            LOG.info("应用级别的Guice注入器初始化完成");
+            return true;
+        } catch (Exception e) {
+            LOG.error("初始化Guice注入器失败，尝试使用备用模块", e);
+            
+            // 尝试使用备用模块
+            try {
+                LOG.info("使用备用模块初始化Guice注入器");
+                injector = Guice.createInjector(createFallbackModule());
+                initialized = true;
+                LOG.info("使用备用模块初始化Guice注入器成功");
+                return true;
+            } catch (Exception e2) {
+                LOG.error("使用备用模块初始化Guice注入器也失败", e2);
+                initialized = false;
+                return false;
+            }
         }
     }
     
@@ -74,7 +83,7 @@ public class GuiceInjector {
                         .in(com.google.inject.Singleton.class);
                     
                     bind(com.lv.tool.privatereader.repository.ReadingProgressRepository.class)
-                        .to(com.lv.tool.privatereader.repository.impl.FileReadingProgressRepository.class)
+                        .to(com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository.class)
                         .in(com.google.inject.Singleton.class);
                     
                     bind(com.lv.tool.privatereader.service.BookService.class)
@@ -104,24 +113,25 @@ public class GuiceInjector {
     /**
      * 获取指定类型的实例
      * 
-     * @param clazz 要获取的类型
-     * @return 指定类型的实例
+     * @param type 类型
+     * @return 实例
+     * @throws IllegalStateException 如果注入器未初始化
      */
-    public static <T> T getInstance(Class<T> clazz) {
-        if (clazz == null) {
-            LOG.error("无法获取实例：类型为null");
-            return null;
+    public static <T> T getInstance(Class<T> type) {
+        if (!initialized || injector == null) {
+             LOG.warn("Guice Injector not initialized or initialization failed. Attempting re-initialization...");
+             initialize(); // Attempt to initialize again
+             if (!initialized || injector == null) {
+                   LOG.error("Failed to initialize Guice Injector on demand for type: " + type.getName());
+                  throw new IllegalStateException("Guice Injector is not initialized.");
+             }
         }
-        
         try {
-            T instance = getInjector().getInstance(clazz);
-            if (instance == null) {
-                LOG.error("无法获取类型为 " + clazz.getName() + " 的实例");
-            }
-            return instance;
+            return injector.getInstance(type);
         } catch (Exception e) {
-            LOG.error("获取类型为 " + clazz.getName() + " 的实例失败", e);
-            return null;
+            LOG.error("Failed to get instance of type: " + type.getName(), e);
+            // Depending on requirements, could return null or re-throw
+            throw new RuntimeException("Failed to get Guice instance for " + type.getName(), e);
         }
     }
     
