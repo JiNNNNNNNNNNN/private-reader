@@ -573,8 +573,12 @@ public final class ReactiveUIAdapter {
         return title;
     }
 
+    // 章节内容缓存
+    private final ConcurrentHashMap<String, String> chapterContentCache = new ConcurrentHashMap<>();
+
     /**
      * 获取章节内容
+     * 优化版本：添加内存缓存、超时处理和更好的错误恢复机制
      *
      * @param book 书籍
      * @param chapterId 章节ID
@@ -594,6 +598,16 @@ public final class ReactiveUIAdapter {
              return Mono.error(new IllegalArgumentException("章节 ID 为 null 或空"));
          }
 
+         // 生成缓存键
+         String cacheKey = book.getId() + ":" + chapterId;
+
+         // 首先检查内存缓存
+         if (chapterContentCache.containsKey(cacheKey)) {
+             String cachedContent = chapterContentCache.get(cacheKey);
+             LOG.info("[调试] 从内存缓存获取章节内容: 书籍=" + book.getTitle() + ", 章节 ID=" + chapterId);
+             return Mono.just(cachedContent);
+         }
+
          // 获取解析器
          NovelParser parser = book.getParser();
          if (parser == null) {
@@ -607,8 +621,16 @@ public final class ReactiveUIAdapter {
          return Mono.<String>fromCallable(() -> {
                  try {
                      LOG.info("[调试] 调用 parser.parseChapterContent: 章节 ID=" + chapterId);
-                     String content = parser.parseChapterContent(chapterId);
+                     // 使用 getChapterContent 方法，它内部会处理缓存
+                     String content = parser.getChapterContent(chapterId, book);
                      LOG.info("[调试] 解析章节内容成功: 章节 ID=" + chapterId + ", 内容长度=" + (content != null ? content.length() : 0));
+
+                     // 缓存内容
+                     if (content != null && !content.isEmpty()) {
+                         chapterContentCache.put(cacheKey, content);
+                         LOG.info("[调试] 缓存章节内容: 书籍=" + book.getTitle() + ", 章节 ID=" + chapterId);
+                     }
+
                      return content;
                  } catch (Exception e) {
                      LOG.error("[调试] 解析章节内容失败: 章节 ID=" + chapterId + ", 错误=" + e.getMessage(), e);
@@ -616,6 +638,45 @@ public final class ReactiveUIAdapter {
                  }
              })
              .subscribeOn(reactiveSchedulers.io()) // 在 IO 调度器上运行
+             .timeout(Duration.ofSeconds(30)) // 设置30秒超时
+             .retry(3) // 失败时重试3次
+             .onErrorResume(error -> {
+                 LOG.error("[调试] 获取章节内容失败，尝试从缓存获取: " + error.getMessage(), error);
+
+                 // 尝试从 ChapterService 获取内容
+                 try {
+                     if (chapterService != null) {
+                         String fallbackContent = chapterService.getChapterContent(book.getId(), chapterId);
+                         if (fallbackContent != null && !fallbackContent.isEmpty()) {
+                             LOG.info("[调试] 从 ChapterService 获取到章节内容: 书籍=" + book.getTitle() + ", 章节 ID=" + chapterId);
+                             return Mono.just(fallbackContent);
+                         }
+                     }
+                 } catch (Exception e) {
+                     LOG.error("[调试] 从 ChapterService 获取章节内容失败: " + e.getMessage(), e);
+                 }
+
+                 // 如果还是失败，返回友好的错误信息
+                 return Mono.just("无法加载章节内容。\n\n可能的原因：\n1. 网络连接问题\n2. 源站内容变更\n3. 解析器错误\n\n请尝试刷新章节列表或重新选择书籍。");
+             })
              .doOnError(error -> LOG.error("[调试] getChapterContent 返回错误: " + error.getMessage(), error));
+     }
+
+     /**
+      * 清除章节内容缓存
+      *
+      * @param bookId 书籍ID，如果为null则清除所有缓存
+      */
+     public void clearChapterContentCache(String bookId) {
+         if (bookId != null) {
+             // 清除指定书籍的章节缓存
+             String prefix = bookId + ":";
+             chapterContentCache.keySet().removeIf(key -> key.startsWith(prefix));
+             LOG.info("[调试] 清除书籍章节内容缓存: " + bookId);
+         } else {
+             // 清除所有缓存
+             chapterContentCache.clear();
+             LOG.info("[调试] 清除所有章节内容缓存");
+         }
      }
 }

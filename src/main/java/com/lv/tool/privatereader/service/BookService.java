@@ -79,4 +79,12 @@ public interface BookService {
      */
     @Nullable
     List<ChapterService.EnhancedChapter> getChaptersSync(@NotNull String bookId);
+
+    /**
+     * 清除章节缓存
+     * 当书籍内容更新时调用
+     *
+     * @param bookId 书籍ID，如果为null则清除所有缓存
+     */
+    void clearChaptersCache(@Nullable String bookId);
 }

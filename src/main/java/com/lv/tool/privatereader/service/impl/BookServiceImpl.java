@@ -287,13 +287,23 @@ public final class BookServiceImpl implements BookService {
         LOG.debug("Invalidating book cache");
         bookCache.clear();
         allBooksCache = null;
+        chaptersCache.clear(); // 同时清除章节缓存
     }
+
+    // 章节列表缓存
+    private final Map<String, List<ChapterService.EnhancedChapter>> chaptersCache = new ConcurrentHashMap<>();
 
     @Override
     @Nullable
     public List<ChapterService.EnhancedChapter> getChaptersSync(@NotNull String bookId) {
         ensureServicesInitialized();
         LOG.debug("同步获取书籍章节列表: " + bookId);
+
+        // 首先检查缓存
+        if (chaptersCache.containsKey(bookId)) {
+            LOG.info("从缓存获取章节列表: " + bookId);
+            return chaptersCache.get(bookId);
+        }
 
         try {
             // 获取书籍对象
@@ -310,25 +320,58 @@ public final class BookServiceImpl implements BookService {
                 return null;
             }
 
-            // 获取章节列表
+            LOG.info("开始获取章节列表 (可能阻塞): " + bookId);
+            // 获取章节列表，设置超时
             List<com.lv.tool.privatereader.parser.NovelParser.Chapter> chapters =
-                chapterService.getChapterList(book).block(); // 阻塞操作
+                chapterService.getChapterList(book)
+                    .timeout(java.time.Duration.ofSeconds(30)) // 设置30秒超时
+                    .onErrorResume(e -> {
+                        LOG.error("获取章节列表超时或出错: " + e.getMessage(), e);
+                        return Mono.empty();
+                    })
+                    .block(); // 阻塞操作
 
             if (chapters == null || chapters.isEmpty()) {
                 LOG.warn("书籍章节列表为空: " + bookId);
                 return List.of(); // 返回空列表
             }
 
+            LOG.info("成功获取章节列表，开始获取章节内容: " + bookId);
             // 转换为增强章节列表
-            return chapters.stream()
+            List<ChapterService.EnhancedChapter> enhancedChapters = chapters.stream()
                 .map(chapter -> {
                     String content = chapterService.getChapterContent(bookId, chapter.url());
                     return new ChapterService.EnhancedChapter(chapter.title(), chapter.url(), content);
                 })
                 .collect(java.util.stream.Collectors.toList());
+
+            // 缓存结果
+            if (!enhancedChapters.isEmpty()) {
+                LOG.info("缓存章节列表: " + bookId + ", 章节数: " + enhancedChapters.size());
+                chaptersCache.put(bookId, enhancedChapters);
+            }
+
+            return enhancedChapters;
         } catch (Exception e) {
             LOG.error("获取书籍章节列表时出错: " + bookId, e);
             return null;
+        }
+    }
+
+    /**
+     * 清除章节缓存
+     * 当书籍内容更新时调用
+     *
+     * @param bookId 书籍ID，如果为null则清除所有缓存
+     */
+    @Override
+    public void clearChaptersCache(@Nullable String bookId) {
+        if (bookId != null) {
+            chaptersCache.remove(bookId);
+            LOG.info("清除书籍章节缓存: " + bookId);
+        } else {
+            chaptersCache.clear();
+            LOG.info("清除所有书籍章节缓存");
         }
     }
 }
