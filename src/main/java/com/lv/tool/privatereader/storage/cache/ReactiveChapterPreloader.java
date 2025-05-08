@@ -19,12 +19,12 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 响应式章节预加载服务
- * 使用响应式编程在后台预加载前后章节，提升连续阅读体验
+ * 使用响应式编程在后台同时预加载当前章节前后的章节，提升连续阅读体验
+ * 通过并行预加载前后章节，减少阅读等待时间
  */
 @Service(Service.Level.APP)
 public final class ReactiveChapterPreloader {
     private static final Logger LOG = Logger.getInstance(ReactiveChapterPreloader.class);
-    private static final int DEFAULT_PRELOAD_COUNT = 50; // 默认预加载50章
 
     private final AtomicBoolean isPreloading = new AtomicBoolean(false);
     private final AtomicReference<String> currentPreloadingBookId = new AtomicReference<>(null);
@@ -47,6 +47,7 @@ public final class ReactiveChapterPreloader {
 
     /**
      * 响应式预加载指定书籍前后章节
+     * 同时预加载当前章节前后的章节，提高阅读体验
      * @param book 当前阅读的书籍
      * @param currentChapterIndex 当前章节索引
      * @return 预加载操作的Mono
@@ -81,7 +82,7 @@ public final class ReactiveChapterPreloader {
             }
             currentPreloadingBookId.set(book.getId());
 
-            LOG.info("开始响应式预加载前后章节，当前章节索引: " + currentChapterIndex);
+            LOG.info("开始响应式预加载前后章节，书籍: " + book.getTitle() + "，当前章节索引: " + currentChapterIndex);
 
             if (book == null || book.getParser() == null) {
                 LOG.warn("书籍或解析器为空，无法预加载");
@@ -130,12 +131,12 @@ public final class ReactiveChapterPreloader {
                 // 对每个章节进行预加载处理
                 .concatMap(chapter -> preloadChapter(book, chapter, preloadDelay));
 
-            // 合并两个流
-            return Flux.concat(nextChaptersFlux, prevChaptersFlux)
+            // 使用merge而不是concat，允许前后章节并行预加载
+            return Flux.merge(nextChaptersFlux, prevChaptersFlux)
                 // 使用弹性线程池执行
                 .subscribeOn(Schedulers.boundedElastic())
                 // 完成后记录日志
-                .doOnComplete(() -> LOG.info("章节预加载完成，预加载范围: 前面(" + startIndex + " - " + (currentChapterIndex - 1) + "), 后面(" + (currentChapterIndex + 1) + " - " + endIndex + ")"))
+                .doOnComplete(() -> LOG.info("章节预加载完成，书籍: " + book.getTitle() + "，预加载范围: 前面(" + startIndex + " - " + (currentChapterIndex - 1) + "), 后面(" + (currentChapterIndex + 1) + " - " + endIndex + ")"))
                 // 错误处理
                 .doOnError(e -> LOG.error("章节预加载过程发生错误: " + e.getMessage(), e))
                 // 无论成功失败都重置状态
@@ -147,9 +148,10 @@ public final class ReactiveChapterPreloader {
 
     /**
      * 预加载单个章节
+     * 检查缓存是否存在，如不存在则获取内容并缓存
      * @param book 书籍
      * @param chapter 章节
-     * @param delayMs 延迟毫秒数
+     * @param delayMs 延迟毫秒数，避免请求过于频繁
      * @return 预加载操作的Mono
      */
     private Mono<Void> preloadChapter(Book book, NovelParser.Chapter chapter, int delayMs) {
@@ -166,7 +168,7 @@ public final class ReactiveChapterPreloader {
 
             // 预加载章节内容
             return Mono.fromCallable(() -> {
-                LOG.info("预加载章节: " + chapter.title());
+                LOG.info("预加载章节: " + chapter.title() + "，书籍: " + book.getTitle());
                 return book.getParser().parseChapterContent(chapter.url());
             })
             // 过滤掉空内容
@@ -174,13 +176,13 @@ public final class ReactiveChapterPreloader {
             // 缓存内容
             .doOnNext(content -> {
                 cacheManager.cacheContent(book.getId(), chapter.url(), content);
-                LOG.info("成功预加载并缓存章节: " + chapter.title());
+                LOG.info("成功预加载并缓存章节: " + chapter.title() + "，书籍: " + book.getTitle() + "，内容长度: " + content.length());
             })
             // 添加延迟，避免请求过于频繁
             .delayElement(Duration.ofMillis(delayMs))
             // 错误处理
             .onErrorResume(e -> {
-                LOG.warn("预加载章节失败: " + chapter.title() + ", 错误: " + e.getMessage());
+                LOG.warn("预加载章节失败: " + chapter.title() + "，书籍: " + book.getTitle() + ", 错误: " + e.getMessage());
                 return Mono.empty();
             })
             // 转换为Mono<Void>
@@ -198,6 +200,7 @@ public final class ReactiveChapterPreloader {
 
     /**
      * 预加载指定书籍前后章节（兼容旧API）
+     * 同时预加载当前章节前后的章节，提高阅读体验
      * @param book 当前阅读的书籍
      * @param currentChapterIndex 当前章节索引
      */

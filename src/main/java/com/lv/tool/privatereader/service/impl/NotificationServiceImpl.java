@@ -16,6 +16,7 @@ import com.lv.tool.privatereader.parser.NovelParser.Chapter;
 import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
+import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
@@ -52,6 +53,7 @@ public final class NotificationServiceImpl implements NotificationService {
     private BookService bookService;
     private ChapterService chapterService;
     private NotificationReaderSettings notificationSettings;
+    private ReactiveChapterPreloader chapterPreloader;
     private final ReactiveSchedulers reactiveSchedulers;
 
     // 分页相关字段
@@ -88,6 +90,10 @@ public final class NotificationServiceImpl implements NotificationService {
 
         if (notificationSettings == null) {
             notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
+        }
+
+        if (chapterPreloader == null) {
+            chapterPreloader = ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class);
         }
     }
 
@@ -236,6 +242,27 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 记录日志
         LOG.info("[通知栏模式] 显示章节内容通知: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + pageNumber);
+
+        // 查找当前章节在章节列表中的索引，并触发预加载
+        List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
+        if (cachedChapters != null && !cachedChapters.isEmpty()) {
+            int currentIndex = -1;
+            for (int i = 0; i < cachedChapters.size(); i++) {
+                if (cachedChapters.get(i).url().equals(chapterId)) {
+                    currentIndex = i;
+                    break;
+                }
+            }
+
+            if (currentIndex != -1) {
+                // 触发章节预加载
+                triggerChapterPreload(book, currentIndex);
+            } else {
+                LOG.warn("[通知栏模式] 无法找到当前章节在列表中的索引，跳过预加载");
+            }
+        } else {
+            LOG.warn("[通知栏模式] 章节列表为空，无法预加载");
+        }
     }
 
     /**
@@ -720,6 +747,9 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 记录日志
         LOG.info("[通知栏模式] 导航到章节: " + targetChapterId);
+
+        // 触发章节预加载
+        triggerChapterPreload(currentBook, targetIndex);
     }
 
     /**
@@ -827,6 +857,9 @@ public final class NotificationServiceImpl implements NotificationService {
 
                 // 记录日志
                 LOG.info("[通知栏模式] 使用cachedChapters导航到章节: " + targetChapterId);
+
+                // 触发章节预加载
+                triggerChapterPreload(currentBook, targetIndex);
             });
         });
     }
@@ -940,6 +973,28 @@ public final class NotificationServiceImpl implements NotificationService {
                     bookService.saveReadingProgress(book, chapterId, currentChapterTitle, currentPageIndex);
                 }
                 LOG.info("[通知栏模式] (Reactive) 显示章节内容成功，使用 Project 对象");
+
+                // 查找当前章节在章节列表中的索引，并触发预加载
+                List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
+                if (cachedChapters != null && !cachedChapters.isEmpty()) {
+                    int currentIndex = -1;
+                    for (int i = 0; i < cachedChapters.size(); i++) {
+                        if (cachedChapters.get(i).url().equals(chapterId)) {
+                            currentIndex = i;
+                            break;
+                        }
+                    }
+
+                    if (currentIndex != -1) {
+                        // 触发章节预加载
+                        triggerChapterPreload(book, currentIndex);
+                    } else {
+                        LOG.warn("[通知栏模式] (Reactive) 无法找到当前章节在列表中的索引，跳过预加载");
+                    }
+                } else {
+                    LOG.warn("[通知栏模式] (Reactive) 章节列表为空，无法预加载");
+                }
+
                 return Mono.just(currentNotificationRef.get());
             } else {
                 // 如果无法获取 Project 对象，使用简单的通知
@@ -1386,6 +1441,9 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 记录日志
         LOG.info("[通知栏模式] 导航到章节的最后一页: " + targetChapterId);
+
+        // 触发章节预加载
+        triggerChapterPreload(currentBook, targetIndex);
     }
 
     /**
@@ -1497,6 +1555,9 @@ public final class NotificationServiceImpl implements NotificationService {
 
                 // 记录日志
                 LOG.info("[通知栏模式] 使用cachedChapters导航到章节的最后一页: " + targetChapterId);
+
+                // 触发章节预加载
+                triggerChapterPreload(currentBook, targetIndex);
             });
         });
     }
@@ -1562,5 +1623,26 @@ public final class NotificationServiceImpl implements NotificationService {
         // currentChapterTitle = null;
         // currentPages.clear();
         // currentPageIndex = 0;
+    }
+
+    /**
+     * 触发章节预加载
+     * 根据当前章节索引预加载前后章节
+     *
+     * @param book 当前阅读的书籍
+     * @param chapterIndex 当前章节索引
+     */
+    private void triggerChapterPreload(@NotNull Book book, int chapterIndex) {
+        ensureServicesInitialized();
+
+        if (chapterPreloader == null) {
+            LOG.warn("[通知栏模式] ReactiveChapterPreloader 未初始化，无法预加载章节");
+            return;
+        }
+
+        LOG.info("[通知栏模式] 触发章节预加载: 书籍=" + book.getTitle() + ", 章节索引=" + chapterIndex);
+
+        // 使用 ReactiveChapterPreloader 预加载前后章节
+        chapterPreloader.preloadChapters(book, chapterIndex);
     }
 }
