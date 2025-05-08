@@ -51,18 +51,39 @@ public final class ChapterServiceImpl implements ChapterService {
 
     /**
      * 确保服务已初始化
+     *
+     * @throws IllegalStateException 如果服务初始化失败
      */
     private void ensureServicesInitialized() {
         // Ensure ChapterCacheRepository is initialized via Mono
         if (cachedRepoMono == null) {
-            getInitializedChapterCacheRepository().subscribe(); // Trigger initialization if not already done
+            LOG.debug("尝试初始化 ChapterCacheRepository 服务");
+            try {
+                // 触发初始化，但不阻塞
+                getInitializedChapterCacheRepository().subscribe(
+                    repo -> LOG.debug("ChapterCacheRepository 服务初始化成功"),
+                    error -> LOG.error("ChapterCacheRepository 服务初始化失败: " + error.getMessage(), error)
+                );
+            } catch (Exception e) {
+                LOG.error("触发 ChapterCacheRepository 服务初始化时出错: " + e.getMessage(), e);
+            }
         }
+
         // Initialize BookRepository directly if needed
         if (bookRepository == null) {
-            bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
-            if (bookRepository == null) {
-                LOG.error("BookRepository 服务无法初始化!", new IllegalStateException("BookRepository service is unavailable."));
-                // Consider throwing or handling the error appropriately
+            LOG.debug("尝试初始化 BookRepository 服务");
+            try {
+                bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
+                if (bookRepository == null) {
+                    String errorMsg = "BookRepository 服务无法初始化!";
+                    LOG.error(errorMsg, new IllegalStateException(errorMsg));
+                    // 不抛出异常，让调用方决定如何处理
+                } else {
+                    LOG.debug("BookRepository 服务初始化成功");
+                }
+            } catch (Exception e) {
+                LOG.error("初始化 BookRepository 服务时出错: " + e.getMessage(), e);
+                // 不抛出异常，让调用方决定如何处理
             }
         }
     }
@@ -79,22 +100,45 @@ public final class ChapterServiceImpl implements ChapterService {
             synchronized (this) {
                 result = cachedRepoMono;
                 if (result == null) {
-                    LOG.debug("首次初始化 ChapterCacheRepository Mono");
-                    result = Mono.fromCallable(() -> {
-                                LOG.debug("尝试在 platformThread 上获取 ChapterCacheRepository 服务");
-                                ChapterCacheRepository service = ApplicationManager.getApplication().getService(ChapterCacheRepository.class);
-                                if (service == null) {
-                                    LOG.error("ChapterCacheRepository 服务无法初始化!");
-                                    throw new IllegalStateException("ChapterCacheRepository service is unavailable.");
-                                }
-                                LOG.debug("成功获取 ChapterCacheRepository 服务");
-                                // 成功获取后，直接赋值给成员变量，后续可直接使用
-                                // 但注意，首次调用仍然需要通过 Mono 完成
-                                this.chapterCacheRepository = service;
-                                return service;
-                            })
-                            .subscribeOn(reactiveSchedulers.platformThread()) // 在平台线程池执行 getService
-                            .cache(); // 缓存结果 Mono
+                    LOG.info("首次初始化 ChapterCacheRepository Mono");
+
+                    // 首先尝试直接获取服务，如果已经初始化则可以避免异步操作
+                    ChapterCacheRepository directService = null;
+                    try {
+                        directService = ApplicationManager.getApplication().getService(ChapterCacheRepository.class);
+                        if (directService != null) {
+                            LOG.info("直接获取 ChapterCacheRepository 服务成功");
+                            this.chapterCacheRepository = directService;
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("直接获取 ChapterCacheRepository 服务失败: " + e.getMessage());
+                    }
+
+                    // 如果直接获取成功，创建一个已完成的 Mono
+                    if (directService != null) {
+                        result = Mono.just(directService);
+                    } else {
+                        // 否则，使用异步方式获取
+                        result = Mono.fromCallable(() -> {
+                                    LOG.debug("尝试在 platformThread 上获取 ChapterCacheRepository 服务");
+                                    ChapterCacheRepository service = ApplicationManager.getApplication().getService(ChapterCacheRepository.class);
+                                    if (service == null) {
+                                        LOG.error("ChapterCacheRepository 服务无法初始化!");
+                                        throw new IllegalStateException("ChapterCacheRepository service is unavailable.");
+                                    }
+                                    LOG.info("成功获取 ChapterCacheRepository 服务");
+                                    // 成功获取后，直接赋值给成员变量，后续可直接使用
+                                    // 但注意，首次调用仍然需要通过 Mono 完成
+                                    this.chapterCacheRepository = service;
+                                    return service;
+                                })
+                                .doOnError(error -> LOG.error("获取 ChapterCacheRepository 服务失败: " + error.getMessage(), error))
+                                .retryWhen(reactor.util.retry.Retry.fixedDelay(3, java.time.Duration.ofSeconds(1))
+                                    .filter(e -> !(e instanceof IllegalStateException))) // 不重试服务不可用的情况
+                                .subscribeOn(reactiveSchedulers.platformThread()) // 在平台线程池执行 getService
+                                .cache(); // 缓存结果 Mono
+                    }
+
                     cachedRepoMono = result;
                 }
             }
@@ -153,12 +197,37 @@ public final class ChapterServiceImpl implements ChapterService {
             ensureServicesInitialized();
             LOG.info("获取章节列表: 书籍='" + book.getTitle() + "'");
 
+            // 首先检查Book对象的cachedChapters属性
+            List<Chapter> bookCachedChapters = book.getCachedChapters();
+            if (bookCachedChapters != null && !bookCachedChapters.isEmpty()) {
+                LOG.info("从Book对象获取章节列表 for book: '" + book.getTitle() + "', 章节数量: " + bookCachedChapters.size());
+
+                // 同步到内存缓存
+                String cacheKey = book.getId();
+                if (cacheKey != null) {
+                    bookChapterListCache.put(cacheKey, bookCachedChapters);
+                    LOG.debug("已同步Book对象的章节列表到内存缓存 for book: '" + book.getTitle() + "'");
+                }
+
+                return Mono.just(bookCachedChapters);
+            }
+
+            // 然后检查内存缓存
             String cacheKey = book.getId();
             List<Chapter> cachedChapters = bookChapterListCache.get(cacheKey);
 
-            if (cachedChapters != null) {
-                LOG.info("从内存缓存获取章节列表 for book: '" + book.getTitle() + "'");
+            if (cachedChapters != null && !cachedChapters.isEmpty()) {
+                LOG.info("从内存缓存获取章节列表 for book: '" + book.getTitle() + "', 章节数量: " + cachedChapters.size());
+
+                // 同步到Book对象
+                book.setCachedChapters(cachedChapters);
+                LOG.debug("已同步内存缓存的章节列表到Book对象 for book: '" + book.getTitle() + "'");
+
                 return Mono.just(cachedChapters);
+            } else if (cachedChapters != null) {
+                LOG.warn("内存缓存中的章节列表为空 for book: '" + book.getTitle() + "', 尝试从本地存储或网络获取");
+                // 移除空列表缓存，以便重新获取
+                bookChapterListCache.remove(cacheKey);
             }
 
             // 内存缓存未命中 for book: '{}', 尝试从本地存储加载...

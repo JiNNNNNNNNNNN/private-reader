@@ -925,5 +925,65 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
     }
 
+    /**
+     * 加载指定的章节
+     *
+     * @param book 书籍
+     * @param chapter 章节
+     */
+    public void loadChapter(Book book, Chapter chapter) {
+        if (book == null || chapter == null) {
+            LOG.warn("无法加载章节：书籍或章节为空");
+            return;
+        }
+
+        LOG.info("加载指定章节：书籍=" + book.getTitle() + ", 章节=" + chapter.title());
+
+        // 如果当前选中的书籍不是指定的书籍，先选择书籍
+        if (selectedBook == null || !selectedBook.equals(book)) {
+            // 保存当前进度
+            saveCurrentProgress().subscribe();
+
+            // 选择书籍
+            selectBookAndLoadProgress(book);
+
+            // 由于选择书籍是异步的，我们需要等待章节列表加载完成后再选择章节
+            // 这里我们使用一个简单的方法：直接加载章节内容
+            selectedBook = book;
+            selectedChapter = chapter;
+
+            // 立即更新Book对象的lastReadChapterId，确保下次打开章节列表对话框时能够正确高亮显示当前选中的章节
+            book.updateReadingProgress(chapter.url(), 0, 1);
+
+            loadChapterContent(book, chapter);
+
+            // 在章节列表中选择对应的章节
+            for (int i = 0; i < chaptersListModel.getSize(); i++) {
+                if (chaptersListModel.getElementAt(i).equals(chapter)) {
+                    chaptersList.setSelectedIndex(i);
+                    chaptersList.ensureIndexIsVisible(i);
+                    break;
+                }
+            }
+        } else {
+            // 如果当前选中的书籍就是指定的书籍，直接选择章节
+            selectedChapter = chapter;
+
+            // 立即更新Book对象的lastReadChapterId，确保下次打开章节列表对话框时能够正确高亮显示当前选中的章节
+            book.updateReadingProgress(chapter.url(), 0, 1);
+
+            loadChapterContent(book, chapter);
+
+            // 在章节列表中选择对应的章节
+            for (int i = 0; i < chaptersListModel.getSize(); i++) {
+                if (chaptersListModel.getElementAt(i).equals(chapter)) {
+                    chaptersList.setSelectedIndex(i);
+                    chaptersList.ensureIndexIsVisible(i);
+                    break;
+                }
+            }
+        }
+    }
+
     // --- End Public API ---
 }

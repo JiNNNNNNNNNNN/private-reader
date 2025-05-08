@@ -17,7 +17,7 @@ import com.google.gson.annotations.Expose;
 
 /**
  * 书籍模型类
- * 
+ *
  * 用于存储和管理书籍的基本信息、阅读进度和章节数据。
  * 包含书籍的元数据（标题、作者等）、阅读状态（当前章节、进度等）
  * 以及章节缓存等功能。
@@ -55,7 +55,7 @@ public class Book {
     /** 是否已读完 */
     @Tag @Expose private boolean finished;
     /** 缓存的章节列表 */
-    @Tag 
+    @Tag
     @XCollection(style = XCollection.Style.v2)
     @Expose
     private List<Chapter> cachedChapters;
@@ -187,8 +187,8 @@ public class Book {
 
     @Override
     public String toString() {
-        return String.format("%s - %s [%d%%]", 
-            title, 
+        return String.format("%s - %s [%d%%]",
+            title,
             author,
             (int) (getReadingProgress() * 100));
     }
@@ -229,7 +229,20 @@ public class Book {
     @Transient
     public NovelParser getParser() {
         if (parser == null && url != null && !url.isEmpty()) {
-            parser = ParserFactory.createParser(url);
+            try {
+                com.intellij.openapi.diagnostic.Logger LOG = com.intellij.openapi.diagnostic.Logger.getInstance(Book.class);
+                LOG.info("创建书籍解析器: " + url);
+                parser = ParserFactory.createParser(url);
+                if (parser != null) {
+                    LOG.info("成功创建书籍解析器: " + url);
+                } else {
+                    LOG.error("创建书籍解析器失败: " + url + "，ParserFactory返回null");
+                }
+            } catch (Exception e) {
+                com.intellij.openapi.diagnostic.Logger LOG = com.intellij.openapi.diagnostic.Logger.getInstance(Book.class);
+                LOG.error("创建书籍解析器时发生错误: " + url + ", 错误: " + e.getMessage(), e);
+                // 不抛出异常，而是返回null，让调用者处理
+            }
         }
         return parser;
     }
@@ -273,27 +286,27 @@ public class Book {
 
     /**
      * 获取书籍名称
-     * 
+     *
      * @return 书籍标题
      */
     public String getName() {
         return this.title;
     }
-    
+
     /**
      * 获取书籍来源ID
-     * 
+     *
      * @return 书籍来源ID
      */
     public String getSourceId() {
         if (sourceId != null && !sourceId.isEmpty()) {
             return sourceId;
         }
-        
+
         if (url == null || url.isEmpty()) {
             return "";
         }
-        
+
         // 从URL中提取源ID
         // 假设URL格式为：http://example.com/book/123
         // 我们提取域名作为源ID
@@ -305,7 +318,7 @@ public class Book {
             return "";
         }
     }
-    
+
     /**
      * 设置书籍来源ID
      *
@@ -314,4 +327,4 @@ public class Book {
     public void setSourceId(String sourceId) {
         this.sourceId = sourceId;
     }
-} 
+}

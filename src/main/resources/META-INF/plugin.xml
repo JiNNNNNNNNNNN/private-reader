@@ -232,6 +232,7 @@
 
     <!-- Notification Group Registration -->
     <notificationGroup id="Private Reader" displayId="Private Reader" displayType="BALLOON"/>
+    <notificationGroup id="Chapter List" displayId="Chapter List" displayType="BALLOON"/>
 
     <applicationConfigurable
             parentId="tools"

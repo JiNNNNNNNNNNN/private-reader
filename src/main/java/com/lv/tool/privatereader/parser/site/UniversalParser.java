@@ -36,11 +36,29 @@ public final class UniversalParser implements NovelParser {
     private final String url;
     private Document document;
     private final SSLSocketFactory sslSocketFactory;
+    private boolean initialized = false;
+    private IOException lastInitError = null;
 
     public UniversalParser(final String url) {
         this.url = url;
         this.sslSocketFactory = createInsecureSSLSocketFactory();
-        LOG.info("开始解析网址: " + url);
+        LOG.info("创建UniversalParser实例: " + url);
+        // 不在构造函数中加载网页，改为延迟加载
+    }
+
+    /**
+     * 初始化解析器，加载网页内容
+     *
+     * @return 是否初始化成功
+     */
+    private boolean initialize() {
+        if (initialized) {
+            return document != null;
+        }
+
+        initialized = true; // 标记为已尝试初始化，无论成功与否
+
+        LOG.info("开始初始化解析器并加载网页: " + url);
         try {
             LOG.debug("尝试连接网址...");
             // 使用系统属性设置代理
@@ -48,84 +66,143 @@ public final class UniversalParser implements NovelParser {
             System.setProperty("http.proxyPort", "");
             System.setProperty("https.proxyHost", "");
             System.setProperty("https.proxyPort", "");
-            
-            // 使用安全的HTTP请求执行器
+
+            // 使用安全的HTTP请求执行器，带有重试机制
             String htmlContent = SafeHttpRequestExecutor.executeGetRequest(url);
-            
+
             // 添加显式的 null 检查
             if (htmlContent == null) {
-                LOG.error("SafeHttpRequestExecutor.executeGetRequest returned null for URL: " + url);
-                // 抛出 IOException 而不是 RuntimeException，以便外层 catch 处理
-                throw new IOException("获取页面内容失败 (返回 null): " + url);
+                LOG.error("SafeHttpRequestExecutor.executeGetRequest返回null，URL: " + url);
+                lastInitError = new IOException("获取页面内容失败 (返回 null): " + url);
+                return false;
             }
-                
+
             // 使用Jsoup解析获取的HTML内容
             this.document = Jsoup.parse(htmlContent, url);
-            LOG.debug("成功获取页面内容，长度: " + document.html().length());
+            LOG.info("成功获取页面内容，长度: " + document.html().length());
+            return true;
         } catch (IOException e) {
-            LOG.error("连接网址失败: " + url, e);
-            throw new RuntimeException("无法连接到网址: " + url, e);
+            LOG.error("连接网址失败: " + url + ", 错误: " + e.getMessage(), e);
+            lastInitError = e;
+            return false;
+        } catch (Exception e) {
+            LOG.error("初始化解析器时发生意外错误: " + url + ", 错误: " + e.getMessage(), e);
+            lastInitError = new IOException("初始化解析器时发生意外错误: " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 确保解析器已初始化
+     *
+     * @throws IOException 如果初始化失败
+     */
+    private void ensureInitialized() throws IOException {
+        if (!initialized) {
+            if (!initialize()) {
+                throw lastInitError != null ? lastInitError : new IOException("初始化解析器失败，原因未知");
+            }
+        } else if (document == null && lastInitError != null) {
+            throw lastInitError;
         }
     }
 
     @Override
     public String getTitle() {
         LOG.debug("开始识别书籍标题...");
-        String title = MetadataAnalyzer.findTitle(document);
-        LOG.info("识别到书籍标题: " + title);
-        return title;
+        try {
+            // 确保解析器已初始化
+            ensureInitialized();
+
+            String title = MetadataAnalyzer.findTitle(document);
+            LOG.info("识别到书籍标题: " + title);
+            return title;
+        } catch (IOException e) {
+            LOG.error("获取书籍标题时发生错误: " + e.getMessage(), e);
+            // 从URL中提取一个基本标题作为后备
+            String urlPath = url.replaceAll("https?://[^/]+/", "");
+            String[] pathSegments = urlPath.split("/");
+            if (pathSegments.length > 0) {
+                String lastSegment = pathSegments[pathSegments.length - 1];
+                if (lastSegment.contains(".")) {
+                    lastSegment = lastSegment.substring(0, lastSegment.lastIndexOf('.'));
+                }
+                if (!lastSegment.isEmpty()) {
+                    LOG.debug("初始化失败，从URL中提取到标题: " + lastSegment);
+                    return lastSegment;
+                }
+            }
+            return url;
+        }
     }
 
     @Override
     public String getAuthor() {
         LOG.debug("开始识别作者信息...");
-        String author = MetadataAnalyzer.findAuthor(document);
-        LOG.info("识别到作者: " + author);
-        return author;
+        try {
+            // 确保解析器已初始化
+            ensureInitialized();
+
+            String author = MetadataAnalyzer.findAuthor(document);
+            LOG.info("识别到作者: " + author);
+            return author;
+        } catch (IOException e) {
+            LOG.error("获取作者信息时发生错误: " + e.getMessage(), e);
+            return "未知作者";
+        }
     }
 
     @Override
     public List<Chapter> parseChapterList() {
         LOG.debug("开始解析章节列表...");
         List<Chapter> chapters = new ArrayList<>();
-        Elements links = document.select("a[href]");
-        LOG.debug("找到链接数量: " + links.size() + "，正在分析...");
-        
-        int processedLinks = 0;
-        for (Element link : links) {
-            String href = link.attr("abs:href");
-            String title = link.text().trim();
-            
-            if (isChapterLink(href, title)) {
-                chapters.add(new Chapter(title, href));
-                LOG.debug("找到章节: " + title + " -> " + href);
+
+        try {
+            // 确保解析器已初始化
+            ensureInitialized();
+
+            Elements links = document.select("a[href]");
+            LOG.debug("找到链接数量: " + links.size() + "，正在分析...");
+
+            int processedLinks = 0;
+            for (Element link : links) {
+                String href = link.attr("abs:href");
+                String title = link.text().trim();
+
+                if (isChapterLink(href, title)) {
+                    chapters.add(new Chapter(title, href));
+                    LOG.debug("找到章节: " + title + " -> " + href);
+                }
+
+                processedLinks++;
+                if (processedLinks % 100 == 0) {
+                    LOG.info(String.format("已处理 %d/%d 个链接，找到 %d 个章节",
+                        processedLinks, links.size(), chapters.size()));
+                }
             }
-            
-            processedLinks++;
-            if (processedLinks % 100 == 0) {
-                LOG.info(String.format("已处理 %d/%d 个链接，找到 %d 个章节", 
-                    processedLinks, links.size(), chapters.size()));
-            }
+        } catch (IOException e) {
+            LOG.error("解析章节列表时发生错误: " + e.getMessage(), e);
+            // 返回空列表，不抛出异常
         }
-        
+
         // 如果没有找到章节，尝试查找可能的章节目录页面
         if (chapters.isEmpty()) {
             LOG.info("直接解析未找到章节，尝试查找目录页面...");
             Elements catalogLinks = document.select("a:matches(目录|章节|卷章|分卷|分章)");
             LOG.debug("找到可能的目录链接数量: " + catalogLinks.size() + "，开始逐个尝试...");
-            
+
             for (Element link : catalogLinks) {
                 try {
                     String catalogUrl = link.attr("abs:href");
                     LOG.info("正在尝试解析目录页面: " + catalogUrl);
-                    
+
                     // 使用安全的HTTP请求执行器
                     String catalogHtml = SafeHttpRequestExecutor.executeGetRequest(catalogUrl);
-                        
+
                     Document catalogDoc = Jsoup.parse(catalogHtml, catalogUrl);
                     Elements catalogChapters = catalogDoc.select("a[href]");
                     LOG.debug("目录页面中找到链接数量: " + catalogChapters.size() + "，开始分析...");
-                    
+
                     int processedCatalogLinks = 0;
                     for (Element chapter : catalogChapters) {
                         String href = chapter.attr("abs:href");
@@ -134,10 +211,10 @@ public final class UniversalParser implements NovelParser {
                             chapters.add(new Chapter(title, href));
                             LOG.debug("从目录页面找到章节: " + title + " -> " + href);
                         }
-                        
+
                         processedCatalogLinks++;
                         if (processedCatalogLinks % 50 == 0) {
-                            LOG.info(String.format("目录页面已处理 %d/%d 个链接，找到 %d 个章节", 
+                            LOG.info(String.format("目录页面已处理 %d/%d 个链接，找到 %d 个章节",
                                 processedCatalogLinks, catalogChapters.size(), chapters.size()));
                         }
                     }
@@ -150,14 +227,14 @@ public final class UniversalParser implements NovelParser {
                 }
             }
         }
-        
+
         if (chapters.isEmpty()) {
             LOG.warn("未能找到任何章节，请检查网页结构或尝试其他目录页面");
         } else {
             LOG.info(String.format("章节解析完成，共找到 %d 章，正在排序...", chapters.size()));
             // 可以在这里添加章节排序逻辑
         }
-        
+
         return chapters;
     }
 
@@ -176,16 +253,16 @@ public final class UniversalParser implements NovelParser {
             );
         }
     }
-    
+
     private String parseChapterContentInternal(String chapterId) {
         try {
             LOG.info("正在连接章节页面...");
-            
+
             // 使用安全的HTTP请求执行器
             String html = SafeHttpRequestExecutor.executeGetRequest(chapterId);
-                
+
             LOG.info("成功获取章节页面内容，长度: " + html.length());
-            
+
             // 尝试不同的编码解析内容
             Document chapterDoc = null;
             String[] encodings = {"UTF-8", "GBK", "GB2312", "GB18030", "BIG5"};
@@ -198,7 +275,7 @@ public final class UniversalParser implements NovelParser {
                     // 使用获取到的HTML字符串创建Document对象
                     Document doc = Jsoup.parse(html, chapterId);
                     String content = extractContent(doc);
-                    
+
                     if (content != null && !content.isEmpty()) {
                         int garbageScore = calculateGarbageScore(content);
                         if (garbageScore < minGarbageScore) {
@@ -237,7 +314,7 @@ public final class UniversalParser implements NovelParser {
         }
 
         // 1. URL特征判断
-        boolean urlMatch = href.contains("/chapter/") || 
+        boolean urlMatch = href.contains("/chapter/") ||
                           href.contains("/read/") ||
                           href.contains("/book/") ||
                           href.matches(".*/(\\d+).(html|htm|shtml|aspx|php)$") ||
@@ -255,15 +332,15 @@ public final class UniversalParser implements NovelParser {
                                         !href.contains("javascript") &&
                                         !href.contains("login") &&
                                         !href.contains("register");
-            
+
             // 检查标题长度和内容
             boolean titleLengthValid = title.length() >= 2 && title.length() <= 50;
-            boolean titleHasValidChars = !title.contains("登录") && 
+            boolean titleHasValidChars = !title.contains("登录") &&
                                        !title.contains("注册") &&
                                        !title.contains("首页") &&
                                        !title.contains("最新") &&
                                        !title.contains("排行");
-            
+
             // 如果URL包含序列数字且标题看起来合理，认为是章节链接
             if (hasSequentialNumbers && titleLengthValid && titleHasValidChars) {
                 LOG.debug("通过智能分析识别到章节链接 - 标题: " + title);
@@ -272,7 +349,7 @@ public final class UniversalParser implements NovelParser {
         }
 
         if (urlMatch || titleMatch) {
-            LOG.debug("识别到章节链接 - 标题: " + title + ", URL: " + href + 
+            LOG.debug("识别到章节链接 - 标题: " + title + ", URL: " + href +
                      " (URL匹配: " + urlMatch + ", 标题匹配: " + titleMatch + ")");
         }
 
@@ -307,7 +384,7 @@ public final class UniversalParser implements NovelParser {
                 LOG.debug("尝试使用 content_read 选择器失败，尝试其他选择器...");
                 content = doc.selectFirst("div.box_con #content");
             }
-            
+
             // 如果特定选择器没有找到内容，使用通用的文本密度分析
             if (content == null) {
                 LOG.info("常用选择器均未找到内容，切换到智能分析模式...");
@@ -318,10 +395,10 @@ public final class UniversalParser implements NovelParser {
                 LOG.info("已找到正文内容，开始清理...");
                 // 移除广告和无关内容
                 content.select("script, style, a, iframe, div.adsbygoogle, .bottem, .bottem2").remove();
-                
+
                 String text = content.text();
                 LOG.debug("原始内容长度: " + text.length() + " 字符");
-                
+
                 // 清理特定的广告文本和无关内容
                 text = text.replaceAll("(?i)(广告|推广|http|www|com|net|org|xyz)[^，。！？]*", "")
                          .replaceAll("(?i)(八八中文网|88中文网|求书网|新笔趣阁|笔趣阁|顶点小说|番茄小说)[^，。！？]*", "")
@@ -340,7 +417,7 @@ public final class UniversalParser implements NovelParser {
                          .replaceAll("^\\s*[早中午晚]章.*$|^\\s*[春夏秋冬]章.*$", "")  // 移除时间相关章节标题
                          .replaceAll("^\\s*(间|幕)?插.*$", "")  // 移除插入章节标题
                          .trim();
-                
+
                 String formatted = TextFormatter.format(text);
                 LOG.info(String.format("内容处理完成，最终长度: %d 字符", formatted.length()));
                 return formatted;
@@ -348,7 +425,7 @@ public final class UniversalParser implements NovelParser {
         } catch (Exception e) {
             LOG.error("提取内容时发生错误", e);
         }
-        
+
         return null;
     }
 
@@ -410,7 +487,7 @@ public final class UniversalParser implements NovelParser {
             || Character.getType(c) == Character.FINAL_QUOTE_PUNCTUATION) {
             return true;
         }
-        
+
         // 额外检查一些可能未被上述方法捕获的中文标点符号
         int[] punctuations = {
             0x3002, // 。
@@ -435,7 +512,7 @@ public final class UniversalParser implements NovelParser {
             0x2014, // —
             0x2015  // ―
         };
-        
+
         for (int p : punctuations) {
             if (c == p) {
                 return true;

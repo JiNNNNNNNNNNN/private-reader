@@ -15,6 +15,7 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.AsyncProcessIcon;
 import com.lv.tool.privatereader.async.ReactiveTaskManager;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
@@ -34,7 +35,11 @@ import java.awt.event.MouseEvent;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingConstants;
 
 public class BookshelfDialog extends DialogWrapper {
     private final Project project;
@@ -44,6 +49,8 @@ public class BookshelfDialog extends DialogWrapper {
     private final ReadingProgressRepository readingProgressRepository;
     private JPanel mainPanel;
     private JComboBox<String> sortComboBox;
+    private AsyncProcessIcon loadingIcon;
+    private JPanel loadingPanel;
     private static final String NOTIFICATION_GROUP_ID = "Private Reader";
     private static final Logger LOG = Logger.getInstance(BookshelfDialog.class);
 
@@ -51,24 +58,24 @@ public class BookshelfDialog extends DialogWrapper {
         super(project);
         this.project = project;
         this.bookService = ApplicationManager.getApplication().getService(BookService.class);
-        
+
         // Get repositories directly using ApplicationManager
         this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
         this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
-        
+
         if (this.bookRepository == null || this.readingProgressRepository == null) {
             LOG.error("Failed to get required repository services (BookRepository or ReadingProgressRepository).");
         }
-        
+
         this.bookList = new JBList<>();
-        
+
         // 订阅书籍更新事件
         project.getMessageBus().connect().subscribe(BookshelfTopics.BOOK_UPDATED, book -> {
             if (book != null) {
                 refreshBookList();
             }
         });
-        
+
         init();
         setTitle("书架");
         setSize(600, 400);
@@ -78,11 +85,11 @@ public class BookshelfDialog extends DialogWrapper {
     protected @Nullable JComponent createCenterPanel() {
         mainPanel = new JPanel(new BorderLayout());
         mainPanel.setBorder(JBUI.Borders.empty(10));
-        
+
         // 创建工具栏
         JPanel toolBar = createToolBar();
         mainPanel.add(toolBar, BorderLayout.NORTH);
-        
+
         // 创建书籍列表
         bookList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         bookList.addMouseListener(new MouseAdapter() {
@@ -95,24 +102,51 @@ public class BookshelfDialog extends DialogWrapper {
                 }
             }
         });
-        
+
         JBScrollPane scrollPane = new JBScrollPane(bookList);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
-        
+
+        // 创建加载状态面板
+        createLoadingPanel();
+
         // 加载书籍
         refreshBookList();
-        
+
         return mainPanel;
+    }
+
+    private void createLoadingPanel() {
+        loadingPanel = new JPanel(new BorderLayout());
+        loadingPanel.setVisible(false);
+
+        loadingIcon = new AsyncProcessIcon("加载中");
+        JLabel loadingLabel = new JLabel("正在打开书籍，请稍候...");
+        loadingLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        loadingPanel.add(loadingIcon, BorderLayout.NORTH);
+        loadingPanel.add(loadingLabel, BorderLayout.CENTER);
+
+        mainPanel.add(loadingPanel, BorderLayout.SOUTH);
+    }
+
+    private void showLoading() {
+        loadingPanel.setVisible(true);
+        loadingIcon.resume();
+    }
+
+    private void hideLoading() {
+        loadingPanel.setVisible(false);
+        loadingIcon.suspend();
     }
 
     private JPanel createToolBar() {
         JPanel toolBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        
+
         // 排序下拉框
         sortComboBox = new JComboBox<>(new String[]{"按书名排序", "按进度排序", "按时间排序"});
         sortComboBox.addActionListener(e -> sortBooks());
         toolBar.add(sortComboBox);
-        
+
         // 刷新按钮
         JButton refreshButton = new JButton("刷新章节");
         refreshButton.addActionListener(e -> {
@@ -139,7 +173,7 @@ public class BookshelfDialog extends DialogWrapper {
             }
         });
         toolBar.add(refreshButton);
-        
+
         // 重置进度按钮
         JButton resetButton = new JButton("重置进度");
         resetButton.addActionListener(e -> {
@@ -151,7 +185,7 @@ public class BookshelfDialog extends DialogWrapper {
                     "重置进度",
                     Messages.getQuestionIcon()
                 );
-                
+
                 if (result == Messages.YES) {
                     if (readingProgressRepository != null) {
                          try {
@@ -169,7 +203,7 @@ public class BookshelfDialog extends DialogWrapper {
             }
         });
         toolBar.add(resetButton);
-        
+
         // 移除书籍按钮
         JButton removeButton = new JButton("移除书籍");
         removeButton.addActionListener(e -> {
@@ -181,13 +215,13 @@ public class BookshelfDialog extends DialogWrapper {
                     "移除书籍",
                     Messages.getQuestionIcon()
                 );
-                
+
                 if (result == Messages.YES) {
                     try {
                         // 任务管理器将取消预加载任务
                         ReactiveTaskManager taskManager = ReactiveTaskManager.getInstance();
                         taskManager.cancelTasksByPrefix("preload-chapters-" + selectedBook.getId());
-                        
+
                         // 删除书籍
                         removeBook(selectedBook);
                         // 刷新书架对话框
@@ -204,7 +238,7 @@ public class BookshelfDialog extends DialogWrapper {
             }
         });
         toolBar.add(removeButton);
-        
+
         return toolBar;
     }
 
@@ -231,7 +265,7 @@ public class BookshelfDialog extends DialogWrapper {
     private void sortBooks() {
         List<Book> books = getAllBooks();
         int selectedIndex = sortComboBox.getSelectedIndex();
-        
+
         switch (selectedIndex) {
             case 0: // 按书名排序
                 books = books.stream()
@@ -249,7 +283,7 @@ public class BookshelfDialog extends DialogWrapper {
                     .collect(Collectors.toList());
                 break;
         }
-        
+
         bookList.setListData(books.toArray(new Book[0]));
     }
 
@@ -264,27 +298,15 @@ public class BookshelfDialog extends DialogWrapper {
     }
 
     private void openSelectedBook() {
-        Book selectedBook = bookList.getSelectedValue();
-        if (selectedBook != null) {
-            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
-            if (panel != null) {
-                // 确保工具窗口可见
-                ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("PrivateReader");
-                if (toolWindow != null) {
-                    toolWindow.show(null);
-                }
-                panel.selectBookAndLoadProgress(selectedBook);
-            } else {
-                Messages.showWarningDialog(project, "阅读器面板未初始化", "错误");
-            }
-        }
+        // 调用doOKAction方法，它会处理异步加载和UI反馈
+        doOKAction();
     }
 
     private void showPopupMenu(MouseEvent e) {
         Book selectedBook = bookList.getSelectedValue();
         if (selectedBook != null) {
             JPopupMenu popupMenu = new JPopupMenu();
-            
+
             JMenuItem copyUrlItem = new JMenuItem("复制URL");
             copyUrlItem.addActionListener(event -> {
                 String url = selectedBook.getUrl();
@@ -296,14 +318,102 @@ public class BookshelfDialog extends DialogWrapper {
                 }
             });
             popupMenu.add(copyUrlItem);
-            
+
             popupMenu.show(bookList, e.getX(), e.getY());
         }
     }
 
     @Override
     protected void doOKAction() {
-        openSelectedBook();
+        Book selectedBook = bookList.getSelectedValue();
+        if (selectedBook == null) {
+            super.doOKAction(); // 如果没有选中书籍，直接关闭对话框
+            return;
+        }
+
+        // 显示加载状态
+        showLoading();
+
+        // 禁用确定按钮，防止重复点击
+        getOKAction().setEnabled(false);
+
+        // 创建一个标志，用于跟踪操作是否已完成
+        final AtomicBoolean operationCompleted = new AtomicBoolean(false);
+
+        // 在后台线程执行打开书籍操作
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                // 获取ReaderPanel实例
+                ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
+                if (panel != null) {
+                    // 在EDT线程上执行UI操作
+                    SwingUtilities.invokeLater(() -> {
+                        try {
+                            // 确保工具窗口可见
+                            ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("PrivateReader");
+                            if (toolWindow != null) {
+                                toolWindow.show(null);
+                            }
+
+                            // 选择书籍并加载进度
+                            panel.selectBookAndLoadProgress(selectedBook);
+
+                            // 标记操作已完成
+                            operationCompleted.set(true);
+
+                            // 关闭对话框
+                            SwingUtilities.invokeLater(() -> {
+                                hideLoading();
+                                getOKAction().setEnabled(true);
+                                super.doOKAction();
+                            });
+                        } catch (Exception ex) {
+                            LOG.error("打开书籍时出错", ex);
+                            // 在EDT线程上显示错误消息
+                            SwingUtilities.invokeLater(() -> {
+                                hideLoading();
+                                getOKAction().setEnabled(true);
+                                Messages.showErrorDialog(project, "打开书籍时出错: " + ex.getMessage(), "错误");
+                            });
+                        }
+                    });
+                } else {
+                    // 在EDT线程上显示错误消息
+                    SwingUtilities.invokeLater(() -> {
+                        hideLoading();
+                        getOKAction().setEnabled(true);
+                        Messages.showWarningDialog(project, "阅读器面板未初始化", "错误");
+                    });
+                }
+            } catch (Exception ex) {
+                LOG.error("打开书籍时出错", ex);
+                // 在EDT线程上显示错误消息
+                SwingUtilities.invokeLater(() -> {
+                    hideLoading();
+                    getOKAction().setEnabled(true);
+                    Messages.showErrorDialog(project, "打开书籍时出错: " + ex.getMessage(), "错误");
+                });
+            }
+
+            // 添加超时处理，防止操作无限期阻塞
+            try {
+                // 等待最多5秒钟
+                for (int i = 0; i < 50 && !operationCompleted.get(); i++) {
+                    Thread.sleep(100);
+                }
+
+                // 如果操作仍未完成，显示超时消息
+                if (!operationCompleted.get()) {
+                    SwingUtilities.invokeLater(() -> {
+                        hideLoading();
+                        getOKAction().setEnabled(true);
+                        Messages.showWarningDialog(project, "打开书籍操作超时，请稍后再试", "超时");
+                    });
+                }
+            } catch (InterruptedException ex) {
+                LOG.error("等待打开书籍操作完成时被中断", ex);
+            }
+        });
     }
 
     private void updateBookInfo(Book book) {
@@ -340,11 +450,11 @@ public class BookshelfDialog extends DialogWrapper {
         try {
             // return ReadAction.compute(() -> bookService.getAllBooks()); // Old sync call
             // Use ReadAction for potential file access, block for sync result needed by dialog
-            return ReadAction.compute(() -> bookService.getAllBooks().collectList().block(Duration.ofSeconds(10))); 
+            return ReadAction.compute(() -> bookService.getAllBooks().collectList().block(Duration.ofSeconds(10)));
         } catch (Exception e) {
             LOG.error("加载书籍列表时出错", e);
             Messages.showErrorDialog(project, "加载书籍列表失败: " + e.getMessage(), "错误");
             return new ArrayList<>();
         }
     }
-} 
+}

@@ -32,13 +32,13 @@ public class AddBookDialog extends DialogWrapper {
         super(project);
         this.project = project;
         this.bookService = com.intellij.openapi.application.ApplicationManager.getApplication().getService(BookService.class);
-        
+
         setTitle("添加书籍");
         setSize(400, 150);
-        
+
         urlField = new JBTextField();
         urlField.setPreferredSize(new Dimension(300, 30));
-        
+
         init();
     }
 
@@ -46,17 +46,17 @@ public class AddBookDialog extends DialogWrapper {
     protected @Nullable JComponent createCenterPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(JBUI.Borders.empty(10));
-        
+
         JPanel inputPanel = new JPanel(new BorderLayout(5, 5));
         inputPanel.add(new JBLabel("书籍网址:"), BorderLayout.WEST);
         inputPanel.add(urlField, BorderLayout.CENTER);
-        
+
         panel.add(inputPanel, BorderLayout.NORTH);
-        
+
         JLabel tipLabel = new JBLabel("提示: 输入小说网址，系统将自动解析书籍信息");
         tipLabel.setForeground(Color.GRAY);
         panel.add(tipLabel, BorderLayout.SOUTH);
-        
+
         return panel;
     }
 
@@ -67,7 +67,7 @@ public class AddBookDialog extends DialogWrapper {
             Messages.showErrorDialog(project, "请输入书籍网址", "错误");
             return;
         }
-        
+
         try {
             // 创建解析器
             NovelParser parser = ParserFactory.createParser(url);
@@ -75,16 +75,16 @@ public class AddBookDialog extends DialogWrapper {
                 Messages.showErrorDialog(project, "不支持的网站或网址格式不正确", "错误");
                 return;
             }
-            
+
             // 获取书籍信息
             String title = parser.getTitle();
             String author = parser.getAuthor();
-            
+
             if (title == null || title.isEmpty()) {
                 Messages.showErrorDialog(project, "无法获取书籍标题", "错误");
                 return;
             }
-            
+
             // 创建书籍对象
             Book book = new Book();
             book.setId(UUID.randomUUID().toString());
@@ -93,50 +93,68 @@ public class AddBookDialog extends DialogWrapper {
             book.setUrl(url);
             book.setCreateTimeMillis(System.currentTimeMillis());
             book.setParser(parser);
-            
+
             // 使用BookService添加书籍
             BookService bookService = com.intellij.openapi.application.ApplicationManager.getApplication().getService(BookService.class);
-            
+
             // 检查服务是否存在
             if (bookService == null) {
                 LOG.error("无法获取 BookService 实例");
                 Messages.showErrorDialog(this.project, "无法添加书籍，服务不可用。", "错误");
                 return;
             }
-            
-            // boolean success = bookService.addBook(book); // Old sync call
-            bookService.addBook(book) // New async call
-                .publishOn(ReactiveSchedulers.getInstance().ui()) // Switch to UI thread for UI updates
+
+            // 先关闭对话框，然后再执行异步操作
+            super.doOKAction(); // 立即关闭对话框
+
+            // 创建通知组
+            com.intellij.notification.NotificationGroup notificationGroup =
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("Private Reader");
+
+            // 执行异步操作
+            bookService.addBook(book)
+                .publishOn(ReactiveSchedulers.getInstance().ui())
                 .subscribe(
                     success -> {
                         if (success) {
                             LOG.info("成功添加书籍: " + book.getTitle());
-                            dispose(); // 关闭对话框
+
+                            // 显示成功通知
+                            notificationGroup.createNotification(
+                                "添加书籍成功",
+                                "成功添加书籍: " + book.getTitle(),
+                                com.intellij.notification.NotificationType.INFORMATION)
+                                .notify(project);
+
                             // 通过事件总线通知刷新书架
                             ApplicationManager.getApplication().getMessageBus()
                                 .syncPublisher(BookEvents.BookDataListener.BOOK_DATA_TOPIC).bookDataLoaded();
                         } else {
                             LOG.warn("添加书籍失败 (返回 false): " + book.getTitle());
-                            Messages.showWarningDialog(this.project, "添加书籍失败，请检查URL或稍后再试。", "添加失败");
+
+                            // 显示失败通知
+                            notificationGroup.createNotification(
+                                "添加书籍失败",
+                                "添加书籍失败，请检查URL或稍后再试。",
+                                com.intellij.notification.NotificationType.WARNING)
+                                .notify(project);
                         }
                     },
                     error -> {
                         LOG.error("添加书籍时出错: " + book.getTitle(), error);
-                        Messages.showErrorDialog(this.project, "添加书籍时发生错误: " + error.getMessage(), "错误");
+
+                        // 显示错误通知
+                        notificationGroup.createNotification(
+                            "添加书籍错误",
+                            "添加书籍时发生错误: " + error.getMessage(),
+                            com.intellij.notification.NotificationType.ERROR)
+                            .notify(project);
                     }
                 );
-            
-            // Remove old sync logic
-            /*
-            if (success) {
-                super.doOKAction();
-            } else {
-                Messages.showErrorDialog(project, "添加书籍失败", "错误");
-            }
-            */
         } catch (Exception e) {
             ExceptionHandler.handle(project, e, "添加书籍失败: " + e.getMessage());
             LOG.error("添加书籍失败", e);
         }
     }
-} 
+}
