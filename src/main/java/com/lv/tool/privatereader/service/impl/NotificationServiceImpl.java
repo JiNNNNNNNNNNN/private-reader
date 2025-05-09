@@ -71,7 +71,7 @@ public final class NotificationServiceImpl implements NotificationService {
      * 无参构造方法
      */
     public NotificationServiceImpl() {
-        LOG.info("初始化 NotificationServiceImpl");
+        LOG.debug("初始化 NotificationServiceImpl");
         this.reactiveSchedulers = ReactiveSchedulers.getInstance();
         // 其他服务会在首次使用时延迟初始化
     }
@@ -101,24 +101,24 @@ public final class NotificationServiceImpl implements NotificationService {
     public void setCurrentChapterContent(@NotNull String content) {
         ensureServicesInitialized();
         int pageSize = notificationSettings != null ? notificationSettings.getPageSize() : 70; // Use setting for page size
-        LOG.info("NotificationServiceImpl: 设置当前章节内容，使用页面大小: " + pageSize +
+        LOG.debug("NotificationServiceImpl: 设置当前章节内容，使用页面大小: " + pageSize +
                  ", notificationSettings 是否为 null: " + (notificationSettings == null));
 
         // 记录当前页码索引
         int oldPageIndex = this.currentPageIndex;
-        LOG.info(String.format("[页码调试] setCurrentChapterContent 调用前的页码索引: %d", oldPageIndex));
+        LOG.debug(String.format("[页码调试] setCurrentChapterContent 调用前的页码索引: %d", oldPageIndex));
 
         this.currentPages = paginateContent(content, pageSize);
         this.currentPageIndex = 0; // Reset to first page
 
-        LOG.info(String.format("[页码调试] setCurrentChapterContent 调用后的页码索引: %d (重置为0)", this.currentPageIndex));
-        LOG.info("NotificationServiceImpl: 分页完成，总页数: " + this.currentPages.size());
+        LOG.debug(String.format("[页码调试] setCurrentChapterContent 调用后的页码索引: %d (重置为0)", this.currentPageIndex));
+        LOG.debug("NotificationServiceImpl: 分页完成，总页数: " + this.currentPages.size());
     }
 
     @Override
     public int calculateTotalPages(@NotNull String content) {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 计算总页数");
+        LOG.debug("NotificationServiceImpl: 计算总页数");
         int pageSize = notificationSettings != null ? notificationSettings.getPageSize() : 70; // Use setting for page size
         return paginateContent(content, pageSize).size();
     }
@@ -126,7 +126,7 @@ public final class NotificationServiceImpl implements NotificationService {
     @Override
     public String getPageContent(@NotNull String content, int pageNumber) {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 获取页码 " + pageNumber + " 的内容");
+        LOG.debug("NotificationServiceImpl: 获取页码 " + pageNumber + " 的内容");
         int pageSize = notificationSettings != null ? notificationSettings.getPageSize() : 70; // Use setting for page size
         List<String> pages = paginateContent(content, pageSize);
         if (pageNumber > 0 && pageNumber <= pages.size()) {
@@ -139,7 +139,7 @@ public final class NotificationServiceImpl implements NotificationService {
     @Override
     public void showChapterContent(@NotNull Project project, @NotNull String bookId, @NotNull String chapterId, int pageNumber, @NotNull String title, @NotNull String content) {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 显示章节内容通知: " + title);
+        LOG.debug("NotificationServiceImpl: 显示章节内容通知: " + title);
 
         closeCurrentNotificationInternal();
 
@@ -180,12 +180,12 @@ public final class NotificationServiceImpl implements NotificationService {
                         if (chapterId.equals(progressData.lastReadChapterId())) {
                             // 使用保存的页码
                             savedPageNumber = progressData.lastReadPage();
-                            LOG.info(String.format("[页码调试] 从数据库恢复页码: %d", savedPageNumber));
+                            LOG.debug(String.format("[页码调试] 从数据库恢复页码: %d", savedPageNumber));
                         } else {
-                            LOG.info("[页码调试] 章节ID不匹配，无法恢复页码");
+                            LOG.debug("[页码调试] 章节ID不匹配，无法恢复页码");
                         }
                     } else {
-                        LOG.info("[页码调试] 未找到书籍的阅读进度记录");
+                        LOG.debug("[页码调试] 未找到书籍的阅读进度记录");
                     }
                 } else {
                     LOG.warn("[页码调试] 无法获取 SqliteReadingProgressRepository 实例");
@@ -196,30 +196,30 @@ public final class NotificationServiceImpl implements NotificationService {
         }
 
         // 先记录恢复的页码
-        LOG.info(String.format("[页码调试] 恢复的页码: %d", savedPageNumber));
+        LOG.debug(String.format("[页码调试] 恢复的页码: %d", savedPageNumber));
 
         // 然后进行分页，这会重置 currentPageIndex = 0
         setCurrentChapterContent(content); // Paginate and set current pages
 
         // 记录详细日志，用于调试
-        LOG.info(String.format("[页码调试] 显示章节内容: 书籍=%s, 章节=%s, 传入页码=%d, 总页数=%d",
+        LOG.debug(String.format("[页码调试] 显示章节内容: 书籍=%s, 章节=%s, 传入页码=%d, 总页数=%d",
                 bookId, chapterId, pageNumber, currentPages.size()));
 
         // 在分页后，再次设置恢复的页码
         this.currentPageIndex = savedPageNumber - 1; // pageNumber is 1-based, index is 0-based
-        LOG.info(String.format("[页码调试] 重新设置页码索引: %d (对应页码: %d)",
+        LOG.debug(String.format("[页码调试] 重新设置页码索引: %d (对应页码: %d)",
                 this.currentPageIndex, this.currentPageIndex + 1));
 
         // 确保页码索引在有效范围内
         if (this.currentPageIndex < 0) {
-            LOG.info("[页码调试] 页码索引小于0，重置为0");
+            LOG.debug("[页码调试] 页码索引小于0，重置为0");
             this.currentPageIndex = 0;
         } else if (this.currentPageIndex >= currentPages.size()) {
-            LOG.info("[页码调试] 页码索引超出范围，重置为最后一页");
+            LOG.debug("[页码调试] 页码索引超出范围，重置为最后一页");
             this.currentPageIndex = Math.max(0, currentPages.size() - 1);
         }
 
-        LOG.info(String.format("[页码调试] 设置页码索引: %d (对应页码: %d)",
+        LOG.debug(String.format("[页码调试] 设置页码索引: %d (对应页码: %d)",
                 this.currentPageIndex, this.currentPageIndex + 1));
 
         if (currentPages.isEmpty()) {
@@ -241,7 +241,7 @@ public final class NotificationServiceImpl implements NotificationService {
         }
 
         // 记录日志
-        LOG.info("[通知栏模式] 显示章节内容通知: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + pageNumber);
+        LOG.debug("[通知栏模式] 显示章节内容通知: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + pageNumber);
 
         // 查找当前章节在章节列表中的索引，并触发预加载
         List<NovelParser.Chapter> cachedChapters = book.getCachedChapters();
@@ -282,7 +282,7 @@ public final class NotificationServiceImpl implements NotificationService {
         }
 
         // 检查内容长度
-        LOG.info("[通知栏模式] 原始通知内容长度: " + content.length());
+        LOG.debug("[通知栏模式] 原始通知内容长度: " + content.length());
         if (content.length() > 1000) {
             LOG.warn("[通知栏模式] 内容长度超过 1000 个字符，可能会被截断: " + content.length());
         }
@@ -305,7 +305,7 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 清理内容中的HTML标签，保留换行符
         String cleanContent = cleanHtmlTags(content);
-        LOG.info("[通知栏模式] 清理后的通知内容长度: " + cleanContent.length());
+        LOG.debug("[通知栏模式] 清理后的通知内容长度: " + cleanContent.length());
 
         // 创建通知
         Notification notification = NotificationGroupManager.getInstance()
@@ -321,26 +321,26 @@ public final class NotificationServiceImpl implements NotificationService {
             // 1. 页面导航按钮
             if (currentPageIndex > 0) {
                 notification.addAction(NotificationAction.createSimple("上一页", () -> {
-                    LOG.info("[通知栏模式] 点击了上一页按钮，当前页索引: " + currentPageIndex);
+                    LOG.debug("[通知栏模式] 点击了上一页按钮，当前页索引: " + currentPageIndex);
                     showPrevPage(project);
                 }));
             }
 
             if (currentPageIndex < currentPages.size() - 1) {
                 notification.addAction(NotificationAction.createSimple("下一页", () -> {
-                    LOG.info("[通知栏模式] 点击了下一页按钮，当前页索引: " + currentPageIndex);
+                    LOG.debug("[通知栏模式] 点击了下一页按钮，当前页索引: " + currentPageIndex);
                     showNextPage(project);
                 }));
             }
 
             // 2. 章节导航按钮
             notification.addAction(NotificationAction.createSimple("上一章", () -> {
-                LOG.info("[通知栏模式] 点击了上一章按钮");
+                LOG.debug("[通知栏模式] 点击了上一章按钮");
                 navigateChapter(project, -1);
             }));
 
             notification.addAction(NotificationAction.createSimple("下一章", () -> {
-                LOG.info("[通知栏模式] 点击了下一章按钮");
+                LOG.debug("[通知栏模式] 点击了下一章按钮");
                 navigateChapter(project, 1);
             }));
 
@@ -350,14 +350,14 @@ public final class NotificationServiceImpl implements NotificationService {
 
                 if (isAutoReadActive) {
                     notification.addAction(NotificationAction.createSimple("暂停自动阅读", () -> {
-                        LOG.info("[通知栏模式] 点击了暂停自动阅读按钮");
+                        LOG.debug("[通知栏模式] 点击了暂停自动阅读按钮");
                         stopAutoRead();
                         // 刷新通知以更新按钮状态
                         showCurrentPageInternal(project, title, content);
                     }));
                 } else {
                     notification.addAction(NotificationAction.createSimple("开始自动阅读", () -> {
-                        LOG.info("[通知栏模式] 点击了开始自动阅读按钮");
+                        LOG.debug("[通知栏模式] 点击了开始自动阅读按钮");
                         int interval = notificationSettings.getReadIntervalSeconds();
                         startAutoRead(interval);
                         // 刷新通知以更新按钮状态
@@ -368,7 +368,7 @@ public final class NotificationServiceImpl implements NotificationService {
 
             // 4. 添加返回阅读器模式按钮
             notification.addAction(NotificationAction.createSimple("返回阅读器", () -> {
-                LOG.info("[通知栏模式] 点击了返回阅读器按钮");
+                LOG.debug("[通知栏模式] 点击了返回阅读器按钮");
                 // 获取ReaderModeSettings服务并切换模式
                 try {
                     com.lv.tool.privatereader.settings.ReaderModeSettings settings =
@@ -382,7 +382,7 @@ public final class NotificationServiceImpl implements NotificationService {
                 }
             }));
         } else {
-            LOG.info("[通知栏模式] 按照设置不显示导航按钮");
+            LOG.debug("[通知栏模式] 按照设置不显示导航按钮");
         }
 
         // 保存当前通知引用并显示通知
@@ -391,13 +391,13 @@ public final class NotificationServiceImpl implements NotificationService {
         com.intellij.notification.Notifications.Bus.notify(notification, project); // 新的显示方式
 
         // 记录日志
-        LOG.info("[通知栏模式] 显示通知: " + notificationTitle + ", 当前页: " + (currentPageIndex + 1) + "/" + currentPages.size());
+        LOG.debug("[通知栏模式] 显示通知: " + notificationTitle + ", 当前页: " + (currentPageIndex + 1) + "/" + currentPages.size());
     }
 
     @Override
     public void updateNotificationContent(@NotNull Project project, @NotNull String content) {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 更新通知内容");
+        LOG.debug("NotificationServiceImpl: 更新通知内容");
 
         Notification existingNotification = currentNotificationRef.get();
         if (existingNotification != null && !existingNotification.isExpired()) {
@@ -408,7 +408,7 @@ public final class NotificationServiceImpl implements NotificationService {
             existingNotification.notify(project);
 
             // 记录日志
-            LOG.info("[通知栏模式] 更新通知内容成功");
+            LOG.debug("[通知栏模式] 更新通知内容成功");
         } else {
             LOG.warn("没有现有通知可更新或通知已过期");
         }
@@ -417,7 +417,7 @@ public final class NotificationServiceImpl implements NotificationService {
     @Override
     public Mono<Notification> showError(@NotNull String title, @NotNull String message) {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 显示错误: " + title + " - " + message);
+        LOG.debug("NotificationServiceImpl: 显示错误: " + title + " - " + message);
 
         Notification notification = NotificationGroupManager.getInstance()
                 .getNotificationGroup(NOTIFICATION_GROUP_ID)
@@ -427,14 +427,14 @@ public final class NotificationServiceImpl implements NotificationService {
         notification.notify(null); // Notify without project context for general errors
 
         // 记录日志
-        LOG.info("[通知栏模式] 显示错误通知: " + title);
+        LOG.debug("[通知栏模式] 显示错误通知: " + title);
         return Mono.just(notification); // Return Mono for compatibility
     }
 
     @Override
     public Mono<Notification> showInfo(@NotNull String title, @NotNull String message) {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 显示信息: " + title + " - " + message);
+        LOG.debug("NotificationServiceImpl: 显示信息: " + title + " - " + message);
 
         Notification notification = NotificationGroupManager.getInstance()
                 .getNotificationGroup(NOTIFICATION_GROUP_ID)
@@ -444,14 +444,14 @@ public final class NotificationServiceImpl implements NotificationService {
         notification.notify(null); // Notify without project context for general info
 
         // 记录日志
-        LOG.info("[通知栏模式] 显示信息通知: " + title);
+        LOG.debug("[通知栏模式] 显示信息通知: " + title);
         return Mono.just(notification); // Return Mono for compatibility
     }
 
     @Override
     public Mono<Void> closeAllNotificationsReactive() {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl (Reactive): 关闭所有通知");
+        LOG.debug("NotificationServiceImpl (Reactive): 关闭所有通知");
         // This reactive method might be used by other parts of the application
         // It should not interfere with the state managed by the notification bar mode
         // It will just expire the current notification if it exists
@@ -465,11 +465,11 @@ public final class NotificationServiceImpl implements NotificationService {
     @Override
     public void closeAllNotifications() {
         ensureServicesInitialized();
-        LOG.info("NotificationServiceImpl: 关闭所有通知");
+        LOG.debug("NotificationServiceImpl: 关闭所有通知");
         closeCurrentNotificationInternal();
 
         // 记录日志
-        LOG.info("[通知栏模式] 已关闭所有通知");
+        LOG.debug("[通知栏模式] 已关闭所有通知");
     }
 
     @Override

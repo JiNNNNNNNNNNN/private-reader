@@ -71,13 +71,13 @@ public class ConfigDiagnosticTool {
             result.put("configDirWritable", dirWritable);
             result.put("configDirPath", configDir.toString());
 
-            LOG.info("配置目录诊断: 存在=" + dirExists + ", 可读=" + dirReadable + ", 可写=" + dirWritable + ", 路径=" + configDir);
+            LOG.debug("配置目录诊断: 存在=" + dirExists + ", 可读=" + dirReadable + ", 可写=" + dirWritable + ", 路径=" + configDir);
 
             // 如果目录不存在，尝试创建
             if (!dirExists) {
                 try {
                     Files.createDirectories(configDir);
-                    LOG.info("已创建配置目录: " + configDir);
+                    LOG.debug("已创建配置目录: " + configDir);
                     result.put("configDirCreated", true);
                 } catch (Exception e) {
                     LOG.error("创建配置目录失败: " + e.getMessage(), e);
@@ -134,14 +134,14 @@ public class ConfigDiagnosticTool {
             result.put(fileKey + "Writable", fileWritable);
             result.put(fileKey + "Size", fileSize);
 
-            LOG.info("配置文件诊断 [" + fileName + "]: 存在=" + fileExists + ", 可读=" + fileReadable +
+            LOG.debug("配置文件诊断 [" + fileName + "]: 存在=" + fileExists + ", 可读=" + fileReadable +
                     ", 可写=" + fileWritable + ", 大小=" + fileSize + "字节");
 
             // 如果文件存在且可读，读取内容
             if (fileExists && fileReadable && fileSize > 0) {
                 String content = new String(Files.readAllBytes(filePath));
                 // 不记录完整内容，只记录前100个字符，避免日志过大
-                LOG.info("配置文件内容 [" + fileName + "] (前100个字符): " +
+                LOG.debug("配置文件内容 [" + fileName + "] (前100个字符): " +
                         (content.length() > 100 ? content.substring(0, 100) + "..." : content));
             }
         } catch (Exception e) {
@@ -168,7 +168,7 @@ public class ConfigDiagnosticTool {
                 pluginSettingsValues.put("debugMode", pluginSettings.isDebugMode());
 
                 result.put("pluginSettings", pluginSettingsValues);
-                LOG.info("插件设置值: " + pluginSettingsValues);
+                LOG.debug("插件设置值: " + pluginSettingsValues);
             } else {
                 result.put("pluginSettingsAvailable", false);
                 LOG.warn("无法获取插件设置实例");
@@ -185,7 +185,7 @@ public class ConfigDiagnosticTool {
                 readerSettingsValues.put("useAnimation", readerSettings.isUseAnimation());
 
                 result.put("readerSettings", readerSettingsValues);
-                LOG.info("阅读器设置值: " + readerSettingsValues);
+                LOG.debug("阅读器设置值: " + readerSettingsValues);
             } else {
                 result.put("readerSettingsAvailable", false);
                 LOG.warn("无法获取阅读器设置实例");
@@ -202,7 +202,7 @@ public class ConfigDiagnosticTool {
                 cacheSettingsValues.put("preloadCount", cacheSettings.getPreloadCount());
 
                 result.put("cacheSettings", cacheSettingsValues);
-                LOG.info("缓存设置值: " + cacheSettingsValues);
+                LOG.debug("缓存设置值: " + cacheSettingsValues);
             } else {
                 result.put("cacheSettingsAvailable", false);
                 LOG.warn("无法获取缓存设置实例");
@@ -218,7 +218,7 @@ public class ConfigDiagnosticTool {
                 modeSettingsValues.put("showLineNumbers", modeSettings.isShowLineNumbers());
 
                 result.put("modeSettings", modeSettingsValues);
-                LOG.info("阅读模式设置值: " + modeSettingsValues);
+                LOG.debug("阅读模式设置值: " + modeSettingsValues);
             } else {
                 result.put("modeSettingsAvailable", false);
                 LOG.warn("无法获取阅读模式设置实例");
@@ -248,7 +248,7 @@ public class ConfigDiagnosticTool {
                 deleteConfigFile(configDir, "NotificationReaderSettings.json");
                 deleteConfigFile(configDir, "ReaderModeSettings.json");
 
-                LOG.info("已重置所有配置文件");
+                LOG.debug("已重置所有配置文件");
                 return true;
             } else {
                 LOG.warn("配置目录不存在，无需重置");
@@ -271,7 +271,7 @@ public class ConfigDiagnosticTool {
             Path filePath = configDir.resolve(fileName);
             if (Files.exists(filePath)) {
                 Files.delete(filePath);
-                LOG.info("已删除配置文件: " + fileName);
+                LOG.debug("已删除配置文件: " + fileName);
             }
         } catch (Exception e) {
             LOG.error("删除配置文件 [" + fileName + "] 时出错: " + e.getMessage(), e);
@@ -291,7 +291,7 @@ public class ConfigDiagnosticTool {
                 // 先标记为已修改
                 pluginSettings.setEnabled(pluginSettings.isEnabled());
                 pluginSettings.saveSettings();
-                LOG.info("已强制保存插件设置");
+                LOG.debug("已强制保存插件设置");
             }
 
             // 强制保存阅读器设置
@@ -300,7 +300,7 @@ public class ConfigDiagnosticTool {
                 // 先标记为已修改
                 readerSettings.setFontFamily(readerSettings.getFontFamily());
                 readerSettings.saveSettings();
-                LOG.info("已强制保存阅读器设置");
+                LOG.debug("已强制保存阅读器设置");
             }
 
             // 强制保存缓存设置
@@ -309,7 +309,7 @@ public class ConfigDiagnosticTool {
                 // 先标记为已修改
                 cacheSettings.setEnableCache(cacheSettings.isEnableCache());
                 cacheSettings.saveSettings();
-                LOG.info("已强制保存缓存设置");
+                LOG.debug("已强制保存缓存设置");
             }
 
             // 强制保存阅读模式设置
@@ -318,7 +318,7 @@ public class ConfigDiagnosticTool {
                 // 先标记为已修改
                 modeSettings.setNotificationMode(modeSettings.isNotificationMode());
                 modeSettings.saveSettings();
-                LOG.info("已强制保存阅读模式设置");
+                LOG.debug("已强制保存阅读模式设置");
             }
 
             return true;
@@ -340,7 +340,7 @@ public class ConfigDiagnosticTool {
             if (modeSettings != null) {
                 boolean notificationMode = modeSettings.isNotificationMode();
                 result.put("readerModeNotification", notificationMode);
-                LOG.info("[配置诊断] 当前阅读模式: " + (notificationMode ? "通知栏模式" : "阅读器模式"));
+                LOG.debug("[配置诊断] 当前阅读模式: " + (notificationMode ? "通知栏模式" : "阅读器模式"));
             } else {
                 result.put("readerModeAvailable", false);
                 LOG.warn("[配置诊断] 无法获取阅读模式设置实例");
@@ -358,7 +358,7 @@ public class ConfigDiagnosticTool {
      */
     private static void checkNotificationMode(Map<String, Object> result) {
         try {
-            LOG.info("[诊断] 开始检查通知栏模式");
+            LOG.debug("[诊断] 开始检查通知栏模式");
 
             // 检查通知服务
             NotificationService notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
@@ -369,7 +369,7 @@ public class ConfigDiagnosticTool {
             }
 
             result.put("notificationServiceAvailable", true);
-            LOG.info("[诊断] 成功获取通知服务实例");
+            LOG.debug("[诊断] 成功获取通知服务实例");
 
             // 检查通知栏设置
             NotificationReaderSettings notificationSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
@@ -380,7 +380,7 @@ public class ConfigDiagnosticTool {
             }
 
             result.put("notificationSettingsAvailable", true);
-            LOG.info("[诊断] 成功获取通知栏设置实例");
+            LOG.debug("[诊断] 成功获取通知栏设置实例");
 
             // 获取通知栏设置值
             Map<String, Object> notificationSettingsValues = new HashMap<>();
@@ -390,7 +390,7 @@ public class ConfigDiagnosticTool {
             notificationSettingsValues.put("showPageNumber", notificationSettings.isShowPageNumber());
 
             result.put("notificationSettings", notificationSettingsValues);
-            LOG.info("[诊断] 通知栏设置值: " + notificationSettingsValues);
+            LOG.debug("[诊断] 通知栏设置值: " + notificationSettingsValues);
 
             // 获取当前页码和总页数
             int currentPage = notificationService.getCurrentPage();
@@ -398,17 +398,17 @@ public class ConfigDiagnosticTool {
 
             result.put("currentPage", currentPage);
             result.put("totalPages", totalPages);
-            LOG.info("[诊断] 当前页码: " + currentPage + ", 总页数: " + totalPages);
+            LOG.debug("[诊断] 当前页码: " + currentPage + ", 总页数: " + totalPages);
 
             // 获取阅读模式设置
             ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
             if (modeSettings != null) {
                 boolean notificationMode = modeSettings.isNotificationMode();
                 result.put("isNotificationModeEnabled", notificationMode);
-                LOG.info("[诊断] 通知栏模式是否启用: " + notificationMode);
+                LOG.debug("[诊断] 通知栏模式是否启用: " + notificationMode);
             }
 
-            LOG.info("[诊断] 通知栏模式检查完成");
+            LOG.debug("[诊断] 通知栏模式检查完成");
         } catch (Exception e) {
             LOG.error("[诊断] 检查通知栏模式时出错: " + e.getMessage(), e);
             result.put("notificationModeCheckError", e.getMessage());
@@ -438,7 +438,7 @@ public class ConfigDiagnosticTool {
 
             // 获取当前阅读模式
             boolean notificationMode = modeSettings.isNotificationMode();
-            LOG.info("[配置诊断] 当前阅读模式: " + (notificationMode ? "通知栏模式" : "阅读器模式"));
+            LOG.debug("[配置诊断] 当前阅读模式: " + (notificationMode ? "通知栏模式" : "阅读器模式"));
 
             // 应用阅读模式
             Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
@@ -448,11 +448,11 @@ public class ConfigDiagnosticTool {
             }
 
             for (Project project : openProjects) {
-                LOG.info("[配置诊断] 应用阅读模式到项目: " + project.getName());
+                LOG.debug("[配置诊断] 应用阅读模式到项目: " + project.getName());
                 modeSwitcher.applyInitialModeForProject(project);
             }
 
-            LOG.info("[配置诊断] 成功应用阅读模式");
+            LOG.debug("[配置诊断] 成功应用阅读模式");
             return true;
         } catch (Exception e) {
             LOG.error("[配置诊断] 应用阅读模式时出错: " + e.getMessage(), e);

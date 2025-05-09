@@ -32,12 +32,12 @@ import java.util.stream.Collectors;
 
 /**
  * 书籍存储服务
- * 
+ *
  * 负责管理书籍数据的持久化存储，提供以下功能：
  * - 保存和加载书籍列表
  * - 添加和删除书籍
  * - 更新书籍信息
- * 
+ *
  * 采用分离存储方案：
  * - 主索引文件：存储所有书籍的基本信息，位于 private-reader/books/index.json
  * - 书籍详情文件：每本书单独存储详细信息，位于 private-reader/books/{bookId}/details.json
@@ -48,11 +48,11 @@ public class BookStorage {
     private static final int MAX_CACHE_SIZE = 100; // 最大内存缓存数量
     private static final long CLEANUP_INTERVAL = TimeUnit.HOURS.toMillis(1); // 清理间隔
     private long lastCleanupTime = 0;
-    
+
     static {
         LOG.setLevel(LogLevel.DEBUG);
     }
-    
+
     @Tag("books")
     @XCollection(style = XCollection.Style.v2)
     private List<Book> books = new ArrayList<>();
@@ -65,7 +65,7 @@ public class BookStorage {
     private final Path indexFilePath;
     @Transient
     private StorageManager storageManager;
-    
+
     // 内存缓存，使用LRU策略
     @Transient
     private final Map<String, CacheEntry> bookCache = new LinkedHashMap<String, CacheEntry>(MAX_CACHE_SIZE, 0.75f, true) {
@@ -74,12 +74,12 @@ public class BookStorage {
             return size() > MAX_CACHE_SIZE;
         }
     };
-    
+
     // 缓存条目，包含时间戳
     private static class CacheEntry {
         final Book book;
         final long timestamp;
-        
+
         CacheEntry(Book book) {
             this.book = book;
             this.timestamp = System.currentTimeMillis();
@@ -94,7 +94,7 @@ public class BookStorage {
     public BookStorage(Project project) {
         this.project = project;
         this.storageManager = project.getService(StorageManager.class);
-        
+
         // 创建Gson实例，添加压缩选项
         this.gson = new GsonBuilder()
             .setPrettyPrinting()
@@ -104,7 +104,7 @@ public class BookStorage {
                 @Override
                 public boolean shouldSkipField(FieldAttributes f) {
                     // 排除不需要序列化的字段
-                    return f.getName().equals("parser") || 
+                    return f.getName().equals("parser") ||
                            f.getName().equals("project") ||
                            f.getName().equals("cachedChapters");
                 }
@@ -160,7 +160,7 @@ public class BookStorage {
                     out.name("currentChapterIndex").value(book.getCurrentChapterIndex());
                     out.name("finished").value(book.isFinished());
                     out.name("lastReadPage").value(book.getLastReadPage());
-                    
+
                     // 手动序列化章节列表
                     List<Chapter> chapters = book.getCachedChapters();
                     out.name("cachedChapters");
@@ -176,7 +176,7 @@ public class BookStorage {
                         }
                         out.endArray();
                     }
-                    
+
                     out.endObject();
                 }
 
@@ -267,7 +267,7 @@ public class BookStorage {
                 }
             })
             .create();
-            
+
         this.indexFilePath = Path.of(storageManager.getBooksPath(), "index.json");
         loadBooks();
     }
@@ -279,7 +279,7 @@ public class BookStorage {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastCleanupTime >= CLEANUP_INTERVAL) {
             // 清理过期的缓存条目
-            bookCache.entrySet().removeIf(entry -> 
+            bookCache.entrySet().removeIf(entry ->
                 currentTime - entry.getValue().timestamp >= CLEANUP_INTERVAL
             );
             lastCleanupTime = currentTime;
@@ -294,24 +294,24 @@ public class BookStorage {
         try {
             // 读取当前索引文件
             String json = FileUtils.readFileToString(indexFilePath.toFile(), StandardCharsets.UTF_8);
-            
+
             // 解析 JSON
             Type listType = new TypeToken<List<Book>>(){}.getType();
             List<Book> books = gson.fromJson(json, listType);
-            
+
             // 按最后阅读时间排序
             books.sort(Comparator.comparingLong(Book::getLastReadTimeMillis).reversed());
-            
+
             // 只保留前 100 本书
             if (books.size() > 100) {
                 books = books.subList(0, 100);
             }
-            
+
             // 保存压缩后的索引
             String compressedJson = gson.toJson(books);
             FileUtils.writeStringToFile(indexFilePath.toFile(), compressedJson, StandardCharsets.UTF_8);
-            
-            LOG.info("已压缩索引文件，当前书籍数量: " + books.size());
+
+            LOG.debug("已压缩索引文件，当前书籍数量: " + books.size());
         } catch (IOException e) {
             LOG.error("压缩索引文件失败: " + e.getMessage(), e);
         }
@@ -348,13 +348,13 @@ public class BookStorage {
                         book.setLastReadPage(Integer.parseInt(bookElement.getChildText("lastReadPage")));
                         books.add(book);
                     }
-                    
+
                     // 保存为 JSON 格式
                     saveBookIndex();
-                    
+
                     // 删除旧的 XML 文件
                     Files.delete(xmlPath);
-                    LOG.info("已迁移旧版 XML 数据到 JSON 格式");
+                    LOG.debug("已迁移旧版 XML 数据到 JSON 格式");
                 }
             }
         } catch (IOException | JDOMException e) {
@@ -373,7 +373,7 @@ public class BookStorage {
             .setExclusionStrategies(new ExclusionStrategy() {
                 @Override
                 public boolean shouldSkipField(FieldAttributes f) {
-                    return f.getName().equals("parser") || 
+                    return f.getName().equals("parser") ||
                            f.getName().equals("project") ||
                            f.getName().equals("cachedChapters");
                 }
@@ -393,7 +393,7 @@ public class BookStorage {
      */
     public List<Book> getAllBooks(boolean loadDetails) {
         cleanupIfNeeded();
-        
+
         if (loadDetails) {
             return books.stream()
                 .map(book -> {
@@ -402,7 +402,7 @@ public class BookStorage {
                 })
                 .collect(Collectors.toList());
         }
-        
+
         return new ArrayList<>(books);
     }
 
@@ -421,23 +421,23 @@ public class BookStorage {
      */
     public Book getBook(String bookId) {
         cleanupIfNeeded();
-        
+
         // 检查缓存
         CacheEntry cached = bookCache.get(bookId);
         if (cached != null) {
             return cached.book;
         }
-        
+
         // 从内存中查找
         Book book = books.stream()
             .filter(b -> b.getId().equals(bookId))
             .findFirst()
             .orElse(null);
-            
+
         if (book == null) {
             return null;
         }
-        
+
         // 加载详细信息
         Book detailedBook = getBookDetails(bookId);
         if (detailedBook != null) {
@@ -445,7 +445,7 @@ public class BookStorage {
             bookCache.put(bookId, new CacheEntry(detailedBook));
             return detailedBook;
         }
-        
+
         return book;
     }
 
@@ -497,7 +497,7 @@ public class BookStorage {
         books.clear();
         bookCache.clear();
         saveBookIndex();
-        
+
         // 删除所有书籍详情文件
         try {
             Path booksPath = Path.of(PathManager.getSystemPath(), "private-reader", "books");
@@ -508,7 +508,7 @@ public class BookStorage {
             LOG.error("清除所有书籍失败: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * 获取书籍索引文件路径
      * @return 书籍索引文件的完整路径
@@ -525,19 +525,19 @@ public class BookStorage {
             // 确保目录存在
             Path booksPath = Path.of(PathManager.getSystemPath(), "private-reader", "books");
             Files.createDirectories(booksPath);
-            
+
             // 保存索引文件
             Path indexPath = booksPath.resolve("index.json");
             try (FileWriter writer = new FileWriter(indexPath.toFile())) {
                 gson.toJson(books, writer);
             }
-            
-            LOG.info("已保存书籍索引到: " + indexPath);
+
+            LOG.debug("已保存书籍索引到: " + indexPath);
         } catch (IOException e) {
             LOG.error("保存书籍索引失败: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * 保存书籍详细信息到专属目录
      * @param book 要保存的书籍
@@ -547,19 +547,19 @@ public class BookStorage {
             // 确保目录存在
             Path bookPath = Path.of(PathManager.getSystemPath(), "private-reader", "books", book.getId());
             Files.createDirectories(bookPath);
-            
+
             // 保存详情文件
             Path detailsPath = bookPath.resolve("details.json");
             try (FileWriter writer = new FileWriter(detailsPath.toFile())) {
                 gson.toJson(book, writer);
             }
-            
-            LOG.info("已保存书籍详情到: " + detailsPath);
+
+            LOG.debug("已保存书籍详情到: " + detailsPath);
         } catch (IOException e) {
             LOG.error("保存书籍详情失败: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * 加载书籍详细信息
      * @param bookId 书籍ID
@@ -571,7 +571,7 @@ public class BookStorage {
             if (!Files.exists(detailsPath)) {
                 return null;
             }
-            
+
             try (FileReader reader = new FileReader(detailsPath.toFile())) {
                 return gson.fromJson(reader, Book.class);
             }
@@ -580,7 +580,7 @@ public class BookStorage {
             return null;
         }
     }
-    
+
     /**
      * 删除书籍详细信息文件
      * @param bookId 书籍ID
@@ -605,7 +605,7 @@ public class BookStorage {
             if (!Files.exists(indexPath)) {
                 return;
             }
-            
+
             try (FileReader reader = new FileReader(indexPath.toFile())) {
                 Type listType = new TypeToken<List<Book>>(){}.getType();
                 List<Book> loadedBooks = gson.fromJson(reader, listType);
@@ -617,7 +617,7 @@ public class BookStorage {
             LOG.error("加载书籍列表失败: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * 获取书籍数据文件路径（兼容旧版本）
      * @return 书籍数据文件的完整路径
@@ -625,4 +625,4 @@ public class BookStorage {
     public String getBooksFilePath() {
         return storageManager.getBooksFilePath();
     }
-} 
+}

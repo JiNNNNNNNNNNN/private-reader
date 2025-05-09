@@ -49,7 +49,7 @@ public final class BookServiceImpl implements BookService {
      * 无参构造方法
      */
     public BookServiceImpl() {
-        LOG.info("初始化BookServiceImpl");
+        LOG.debug("初始化BookServiceImpl");
         this.reactiveTaskManager = ReactiveTaskManager.getInstance();
         this.reactiveSchedulers = ReactiveSchedulers.getInstance();
         // 其他服务会在首次使用时延迟初始化
@@ -151,7 +151,7 @@ public final class BookServiceImpl implements BookService {
         // Defer ensures initialization happens on subscription
         return Mono.defer(() -> {
             ensureServicesInitialized();
-            LOG.info("Adding book: " + book.getTitle());
+            LOG.debug("Adding book: " + book.getTitle());
             // Run the blocking add operation on the IO scheduler
             return asyncMono(() -> {
                 bookRepository.addBook(book);
@@ -172,7 +172,7 @@ public final class BookServiceImpl implements BookService {
         return Mono.defer(() -> {
             ensureServicesInitialized();
             String bookId = book.getId();
-            LOG.info("Removing book: " + book.getTitle() + " (ID: " + bookId + ")");
+            LOG.debug("Removing book: " + book.getTitle() + " (ID: " + bookId + ")");
 
             // Create Monos for removing metadata and progress, run on IO scheduler
             Mono<Void> removeMetaMono = Mono.fromRunnable(() -> bookRepository.removeBook(book)).subscribeOn(ioScheduler).then();
@@ -199,7 +199,7 @@ public final class BookServiceImpl implements BookService {
         // This method primarily updates metadata via FileBookRepository.
         return Mono.defer(() -> {
             ensureServicesInitialized();
-            LOG.info("Updating book metadata: " + book.getTitle());
+            LOG.debug("Updating book metadata: " + book.getTitle());
             // Run the blocking update on the IO scheduler
             return asyncMono(() -> {
                 bookRepository.updateBook(book); // Updates the JSON file
@@ -233,7 +233,7 @@ public final class BookServiceImpl implements BookService {
                         // Fetch the corresponding book metadata and combine
                         return getBookById(lastReadBookId);
                     } else {
-                        LOG.info("No reading progress found. Falling back to first book alphabetically.");
+                        LOG.debug("No reading progress found. Falling back to first book alphabetically.");
                         // Fall back to the first book alphabetically
                         return getAllBooks()
                                .sort(Comparator.comparing(Book::getTitle))
@@ -257,7 +257,7 @@ public final class BookServiceImpl implements BookService {
             final int page = position + 1;
 
             // 记录详细日志，用于调试
-            LOG.info(String.format("[页码调试] 保存阅读进度: 书籍=%s, 章节=%s, 位置=%d, 计算页码=%d, 原页码=%d",
+            LOG.debug(String.format("[页码调试] 保存阅读进度: 书籍=%s, 章节=%s, 位置=%d, 计算页码=%d, 原页码=%d",
                     book.getId(), chapterId, position, page, book.getLastReadPage()));
 
             book.setLastReadChapterId(chapterId);
@@ -275,7 +275,7 @@ public final class BookServiceImpl implements BookService {
             .doOnSuccess(v -> {
                 // Update cache with the book containing latest progress
                 bookCache.put(book.getId(), book);
-                LOG.info(String.format("[页码调试] 阅读进度保存成功: 书籍=%s, 章节=%s, 位置=%d, 页码=%d",
+                LOG.debug(String.format("[页码调试] 阅读进度保存成功: 书籍=%s, 章节=%s, 位置=%d, 页码=%d",
                         book.getId(), chapterId, position, page));
             })
             .doOnError(e -> LOG.error("Error saving progress in service for book: " + book.getId(), e));
@@ -301,7 +301,7 @@ public final class BookServiceImpl implements BookService {
 
         // 首先检查缓存
         if (chaptersCache.containsKey(bookId)) {
-            LOG.info("从缓存获取章节列表: " + bookId);
+            LOG.debug("从缓存获取章节列表: " + bookId);
             return chaptersCache.get(bookId);
         }
 
@@ -320,7 +320,7 @@ public final class BookServiceImpl implements BookService {
                 return null;
             }
 
-            LOG.info("开始获取章节列表 (可能阻塞): " + bookId);
+            LOG.debug("开始获取章节列表 (可能阻塞): " + bookId);
             // 获取章节列表，设置超时
             List<com.lv.tool.privatereader.parser.NovelParser.Chapter> chapters =
                 chapterService.getChapterList(book)
@@ -336,7 +336,7 @@ public final class BookServiceImpl implements BookService {
                 return List.of(); // 返回空列表
             }
 
-            LOG.info("成功获取章节列表，开始获取章节内容: " + bookId);
+            LOG.debug("成功获取章节列表，开始获取章节内容: " + bookId);
             // 转换为增强章节列表
             List<ChapterService.EnhancedChapter> enhancedChapters = chapters.stream()
                 .map(chapter -> {
@@ -347,7 +347,7 @@ public final class BookServiceImpl implements BookService {
 
             // 缓存结果
             if (!enhancedChapters.isEmpty()) {
-                LOG.info("缓存章节列表: " + bookId + ", 章节数: " + enhancedChapters.size());
+                LOG.debug("缓存章节列表: " + bookId + ", 章节数: " + enhancedChapters.size());
                 chaptersCache.put(bookId, enhancedChapters);
             }
 
@@ -368,10 +368,10 @@ public final class BookServiceImpl implements BookService {
     public void clearChaptersCache(@Nullable String bookId) {
         if (bookId != null) {
             chaptersCache.remove(bookId);
-            LOG.info("清除书籍章节缓存: " + bookId);
+            LOG.debug("清除书籍章节缓存: " + bookId);
         } else {
             chaptersCache.clear();
-            LOG.info("清除所有书籍章节缓存");
+            LOG.debug("清除所有书籍章节缓存");
         }
     }
 }

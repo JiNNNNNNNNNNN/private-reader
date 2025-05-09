@@ -42,11 +42,11 @@ public abstract class BaseSettings<T extends BaseSettings<T>> {
     @SuppressWarnings("unchecked")
     protected void loadSettings() {
         if (loaded) {
-            LOG.info("[配置诊断] " + getClass().getSimpleName() + " 已加载，跳过加载过程");
+            LOG.debug("[配置诊断] " + getClass().getSimpleName() + " 已加载，跳过加载过程");
             return;
         }
 
-        LOG.info("[配置诊断] 开始加载 " + getClass().getSimpleName() + " 配置");
+        LOG.debug("[配置诊断] 开始加载 " + getClass().getSimpleName() + " 配置");
         try {
             SettingsStorage settingsStorage = SettingsStorage.getInstance();
             if (settingsStorage == null) {
@@ -57,10 +57,10 @@ public abstract class BaseSettings<T extends BaseSettings<T>> {
 
             T loadedSettings = (T) settingsStorage.loadSettings(getClass());
             if (loadedSettings != null) {
-                LOG.info("[配置诊断] 成功从存储加载 " + getClass().getSimpleName() + " 配置");
+                LOG.debug("[配置诊断] 成功从存储加载 " + getClass().getSimpleName() + " 配置");
                 copyFrom(loadedSettings);
             } else {
-                LOG.info("[配置诊断] 未找到 " + getClass().getSimpleName() + " 配置文件，使用默认值");
+                LOG.debug("[配置诊断] 未找到 " + getClass().getSimpleName() + " 配置文件，使用默认值");
                 // 如果没有加载到设置，使用默认值
                 useDefaultSettings();
             }
@@ -80,7 +80,7 @@ public abstract class BaseSettings<T extends BaseSettings<T>> {
         try {
             T defaultSettings = getDefault();
             if (defaultSettings != null) {
-                LOG.info("[配置诊断] 应用默认设置: " + getClass().getSimpleName());
+                LOG.debug("[配置诊断] 应用默认设置: " + getClass().getSimpleName());
                 copyFrom(defaultSettings);
             } else {
                 LOG.error("[配置诊断] 获取默认设置失败: " + getClass().getSimpleName());
@@ -102,7 +102,7 @@ public abstract class BaseSettings<T extends BaseSettings<T>> {
         }
 
         if (dirty) {
-            LOG.info("[配置诊断] 开始保存 " + getClass().getSimpleName() + " 配置 (dirty=true)");
+            LOG.debug("[配置诊断] 开始保存 " + getClass().getSimpleName() + " 配置 (dirty=true)");
             try {
                 SettingsStorage settingsStorage = SettingsStorage.getInstance();
                 if (settingsStorage == null) {
@@ -111,19 +111,19 @@ public abstract class BaseSettings<T extends BaseSettings<T>> {
                 }
 
                 settingsStorage.saveSettings((T) this);
-                LOG.info("[配置诊断] 成功保存 " + getClass().getSimpleName() + " 配置");
+                LOG.debug("[配置诊断] 成功保存 " + getClass().getSimpleName() + " 配置");
                 dirty = false;
             } catch (Exception e) {
                 LOG.error("[配置诊断] 保存设置失败: " + getClass().getSimpleName(), e);
             }
         } else {
-            LOG.info("[配置诊断] 跳过保存 " + getClass().getSimpleName() + " 配置 (dirty=false)");
+            LOG.debug("[配置诊断] 跳过保存 " + getClass().getSimpleName() + " 配置 (dirty=false)");
         }
     }
 
     protected void markDirty() {
         this.dirty = true;
-        LOG.info("[配置诊断] 标记 " + getClass().getSimpleName() + " 配置为已修改");
+        LOG.debug("[配置诊断] 标记 " + getClass().getSimpleName() + " 配置为已修改");
     }
 
     protected boolean isDirty() {

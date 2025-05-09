@@ -13,17 +13,17 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class PerformanceMonitor {
     private static final Logger LOG = Logger.getInstance(PerformanceMonitor.class);
-    
+
     private final Map<String, AtomicLong> operationTimes = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> operationCounts = new ConcurrentHashMap<>();
-    
+
     /**
      * 开始记录操作时间
      */
     public void startOperation(@NotNull String operation) {
         operationTimes.put(operation, new AtomicLong(System.currentTimeMillis()));
     }
-    
+
     /**
      * 结束操作并记录耗时
      */
@@ -32,10 +32,10 @@ public class PerformanceMonitor {
         if (startTime != null) {
             long duration = System.currentTimeMillis() - startTime.get();
             operationCounts.computeIfAbsent(operation, k -> new AtomicLong(0)).incrementAndGet();
-            LOG.info(String.format("操作 '%s' 耗时: %d ms", operation, duration));
+            LOG.debug(String.format("操作 '%s' 耗时: %d ms", operation, duration));
         }
     }
-    
+
     /**
      * 获取操作的平均耗时
      */
@@ -46,7 +46,7 @@ public class PerformanceMonitor {
         }
         return (double) operationTimes.getOrDefault(operation, new AtomicLong(0)).get() / count.get();
     }
-    
+
     /**
      * 获取所有操作的统计信息
      */
@@ -59,13 +59,13 @@ public class PerformanceMonitor {
         });
         return stats.toString();
     }
-    
+
     /**
      * 重置所有统计信息
      */
     public void reset() {
         operationTimes.clear();
         operationCounts.clear();
-        LOG.info("性能统计已重置");
+        LOG.debug("性能统计已重置");
     }
-} 
+}
