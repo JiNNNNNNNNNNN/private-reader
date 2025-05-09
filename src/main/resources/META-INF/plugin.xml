@@ -108,68 +108,25 @@
   ]]></description>
 
   <change-notes><![CDATA[
-    <h3>Version 1.1.0</h3>
+    <h3>Version 2.0.0</h3>
     <ul>
-      <li>Feature Improvements:
+      <li>Major Version Upgrade:
         <ul>
-          <li>Enhanced reader interface</li>
-          <li>Improved chapter loading speed</li>
-          <li>Enhanced caching mechanism</li>
+          <li>Complete refactoring of core parsing engine</li>
+          <li>Optimized memory usage and performance</li>
+          <li>Improved user interface experience</li>
+          <li>Enhanced cache management system</li>
         </ul>
       </li>
     </ul>
-    <h3>1.1.0 版本更新</h3>
+    <h3>2.0.0 版本更新</h3>
     <ul>
-      <li>功能优化：
+      <li>重大版本升级：
         <ul>
-          <li>优化阅读器界面</li>
-          <li>提升章节加载速度</li>
-          <li>改进缓存机制</li>
-        </ul>
-      </li>
-    </ul>
-    <br>
-    <h3>Version 1.0.0</h3>
-    <ul>
-      <li>Initial Release</li>
-      <li>Basic Features:
-        <ul>
-          <li>Add and remove books</li>
-          <li>Reading progress save</li>
-          <li>Chapter content cache</li>
-          <li>Universal website smart parsing</li>
-          <li>Switch between reader mode and notification bar mode</li>
-          <li>Refresh chapter content (ignore cache)</li>
-        </ul>
-      </li>
-      <li>UI Optimization:
-        <ul>
-          <li>Elegant reading interface</li>
-          <li>Reasonable menu layout</li>
-          <li>Keyboard shortcuts support</li>
-          <li>Ctrl+1 Clear screen, Ctrl+2 Previous page, Ctrl+3 Next page, Ctrl+4 Refresh chapter content</li>
-        </ul>
-      </li>
-    </ul>
-    <h3>1.0.0 版本更新</h3>
-    <ul>
-      <li>首次发布</li>
-      <li>基础功能实现：
-        <ul>
-          <li>支持添加、移除书籍</li>
-          <li>支持阅读进度保存</li>
-          <li>支持章节内容缓存</li>
-          <li>支持通用网站智能解析</li>
-          <li>支持阅读器模式和通知栏模式切换</li>
-          <li>支持章节内容刷新（忽略缓存）</li>
-        </ul>
-      </li>
-      <li>UI 优化：
-        <ul>
-          <li>优雅的阅读界面</li>
-          <li>合理的菜单布局</li>
-          <li>快捷键支持</li>
-          <li>Ctrl+1 清屏，Ctrl+2 上一页，Ctrl+3 下一页，Ctrl+4 刷新章节内容</li>
+          <li>全面重构核心解析引擎</li>
+          <li>优化内存使用和性能</li>
+          <li>改进用户界面体验</li>
+          <li>增强缓存管理系统</li>
         </ul>
       </li>
     </ul>

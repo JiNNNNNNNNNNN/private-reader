@@ -1,5 +1,13 @@
 # Changelog 更新日志
 
+## [2.0.0] - 2025-05-09
+
+### 重大版本升级 | Major Version Upgrade
+- 全面重构核心解析引擎 | Complete refactoring of core parsing engine
+- 优化内存使用和性能 | Optimized memory usage and performance
+- 改进用户界面体验 | Improved user interface experience
+- 增强缓存管理系统 | Enhanced cache management system
+
 ## [1.1.0] - 2025-03-05
 
 ### 功能优化 | Feature Improvements
@@ -65,4 +73,4 @@
 - 异常处理和日志记录 | Exception Handling and Logging
   - 详细的错误日志 | Detailed error logs
   - 优雅的降级处理 | Graceful degradation
-  - 备用方案支持 | Fallback solution support 
+  - 备用方案支持 | Fallback solution support
