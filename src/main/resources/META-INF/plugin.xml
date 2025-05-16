@@ -140,8 +140,8 @@
     <toolWindow id="PrivateReader" secondary="true" icon="com.lv.tool.privatereader.ui.PrivateReaderIcons.TOOL_WINDOW" anchor="right"
                 factoryClass="com.lv.tool.privatereader.ui.ReaderToolWindowFactory"/>
 
-    <!-- Initializer (name wasn't changed) -->
-    <appLifecycleListener implementation="com.lv.tool.privatereader.initialization.PrivateReaderAppLifecycleListener"/>
+    <!-- 使用 StartupActivity 替代 AppLifecycleListener -->
+    <postStartupActivity implementation="com.lv.tool.privatereader.initialization.PrivateReaderStartupActivity"/>
 
     <!-- 添加源管理器服务 -->
     <applicationService serviceInterface="com.lv.tool.privatereader.source.SourceManager"
