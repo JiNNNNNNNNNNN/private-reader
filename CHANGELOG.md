@@ -1,5 +1,13 @@
 # Changelog 更新日志
 
+## [2.1.0] - 2025-05-27
+
+### 功能优化 | Feature Improvements
+- 优化解析引擎性能 | Optimized parsing engine performance
+- 改进缓存管理机制 | Improved cache management mechanism
+- 增强用户界面响应速度 | Enhanced UI response speed
+- 修复已知问题 | Fixed known issues
+
 ## [2.0.0] - 2025-05-09
 
 ### 重大版本升级 | Major Version Upgrade
