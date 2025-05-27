@@ -89,35 +89,64 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         this.currentChapterId = chapterId;
         this.currentPageNumber = pageNumber;
 
-        // 2. Get current chapter content and title
-        String chapterContent = chapterService.getChapterContent(bookId, chapterId);
-        String chapterTitle = chapterService.getChapterTitle(bookId, chapterId);
-
-        // 3. Calculate total pages and get current page content (NotificationService handles pagination)
-        // NotificationService needs methods to handle pagination internally based on content
-        notificationService.setCurrentChapterContent(chapterContent); // Assuming NotificationService can store content
-        int totalPages = notificationService.calculateTotalPages(chapterContent);
-
-        // 确保页码在有效范围内
-        if (pageNumber <= 0) {
-            pageNumber = 1; // 如果页码无效，默认为第一页
-        } else if (pageNumber > totalPages) {
-            pageNumber = totalPages; // 如果页码超出范围，使用最后一页
+        // 获取当前打开的项目
+        Project currentProject = this.project;
+        if (currentProject == null) {
+            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+            if (openProjects.length > 0) {
+                currentProject = openProjects[0];
+            }
         }
-
-        this.currentPageNumber = pageNumber; // 更新为有效的页码
-
-        // 5. Use NotificationService to display notification with actions
-        // NotificationService will handle pagination and display the correct page.
-        // Pass the full chapterContent and the original chapterTitle.
-        notificationService.showChapterContent(project, bookId, chapterId, pageNumber, chapterTitle, chapterContent);
-
-        // 7. 记录日志
-        System.out.println("[通知栏模式] 激活通知栏模式: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + pageNumber);
-
-        // Update Memory Bank
-        updateActiveContext("Activated Notification Bar Mode for book: " + bookId + ", chapter: " + chapterId + ", page: " + pageNumber);
-        updateProgress("Started implementing Notification Bar Mode activation.");
+        
+        if (currentProject == null) {
+            LOG.error("无法激活通知栏模式：没有打开的项目");
+            return;
+        }
+        
+        // 显示加载状态通知
+        notificationService.showLoadingNotification(currentProject, "正在加载章节内容...");
+        
+        // 异步获取章节内容和标题
+        final Project finalProject = currentProject;
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                // 2. Get current chapter content and title
+                String chapterContent = chapterService.getChapterContent(bookId, chapterId);
+                String chapterTitle = chapterService.getChapterTitle(bookId, chapterId);
+                
+                // 在UI线程中显示通知
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    // 3. Calculate total pages and get current page content
+                    notificationService.setCurrentChapterContent(chapterContent);
+                    int totalPages = notificationService.calculateTotalPages(chapterContent);
+                    
+                    // 确保页码在有效范围内
+                    int validPageNumber = pageNumber;
+                    if (validPageNumber <= 0) {
+                        validPageNumber = 1; // 如果页码无效，默认为第一页
+                    } else if (validPageNumber > totalPages) {
+                        validPageNumber = totalPages; // 如果页码超出范围，使用最后一页
+                    }
+                    
+                    this.currentPageNumber = validPageNumber; // 更新为有效的页码
+                    
+                    // 5. Use NotificationService to display notification with actions
+                    notificationService.showChapterContent(finalProject, bookId, chapterId, validPageNumber, chapterTitle, chapterContent);
+                    
+                    // 7. 记录日志
+                    System.out.println("[通知栏模式] 激活通知栏模式: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + validPageNumber);
+                    
+                    // Update Memory Bank
+                    updateActiveContext("Activated Notification Bar Mode for book: " + bookId + ", chapter: " + chapterId + ", page: " + validPageNumber);
+                    updateProgress("Started implementing Notification Bar Mode activation.");
+                });
+            } catch (Exception e) {
+                LOG.error("激活通知栏模式失败", e);
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    notificationService.showError("激活通知栏模式失败", "无法加载章节内容: " + e.getMessage());
+                });
+            }
+        });
     }
 
     /**

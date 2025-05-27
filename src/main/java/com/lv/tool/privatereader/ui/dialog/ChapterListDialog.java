@@ -186,16 +186,8 @@ public class ChapterListDialog extends DialogWrapper {
             book.getReadingProgress() * 100));
         infoPanel.add(infoLabel, BorderLayout.CENTER);
 
-        // 创建按钮面板
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-
-        // 添加刷新按钮
-        JButton refreshButton = new JButton("刷新章节");
-        refreshButton.setToolTipText("从网络获取最新章节列表");
-        refreshButton.addActionListener(e -> refreshChapters());
-        buttonPanel.add(refreshButton);
-
-        infoPanel.add(buttonPanel, BorderLayout.EAST);
+        // 不再创建按钮面板和刷新按钮
+        
         mainPanel.add(infoPanel, BorderLayout.NORTH);
     }
 

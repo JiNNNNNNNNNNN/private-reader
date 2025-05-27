@@ -13,6 +13,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -109,8 +110,29 @@ public final class ReactiveChapterPreloader {
             // 计算前面章节的预加载范围
             int startIndex = Math.max(0, currentChapterIndex - preloadCount);
 
-            // 创建前面章节的预加载流
-            Flux<Void> prevChaptersFlux = Flux.range(startIndex, currentChapterIndex - startIndex)
+            // 创建优先级队列，按照与当前章节的距离排序
+            List<Integer> prioritizedIndices = new ArrayList<>();
+            
+            // 首先添加当前章节（如果需要预加载）
+            ChapterCacheManager cacheManager = ApplicationManager.getApplication().getService(ChapterCacheManager.class);
+            NovelParser.Chapter currentChapter = chapters.get(currentChapterIndex);
+            String cachedCurrentContent = cacheManager.getCachedContent(book.getId(), currentChapter.url());
+            if (cachedCurrentContent == null) {
+                prioritizedIndices.add(currentChapterIndex);
+            }
+            
+            // 然后添加后续章节
+            for (int i = currentChapterIndex + 1; i <= endIndex; i++) {
+                prioritizedIndices.add(i);
+            }
+            
+            // 最后添加前面章节
+            for (int i = currentChapterIndex - 1; i >= startIndex; i--) {
+                prioritizedIndices.add(i);
+            }
+
+            // 创建预加载流
+            Flux<Void> preloadFlux = Flux.fromIterable(prioritizedIndices)
                 // 检查是否仍在预加载状态
                 .takeWhile(i -> isPreloading.get())
                 // 获取章节对象
@@ -120,20 +142,8 @@ public final class ReactiveChapterPreloader {
                 // 对每个章节进行预加载处理
                 .concatMap(chapter -> preloadChapter(book, chapter, preloadDelay));
 
-            // 创建后续章节的预加载流
-            Flux<Void> nextChaptersFlux = Flux.range(currentChapterIndex + 1, endIndex - currentChapterIndex)
-                // 检查是否仍在预加载状态
-                .takeWhile(i -> isPreloading.get())
-                // 获取章节对象
-                .map(i -> chapters.get(i))
-                // 过滤掉null章节
-                .filter(chapter -> chapter != null)
-                // 对每个章节进行预加载处理
-                .concatMap(chapter -> preloadChapter(book, chapter, preloadDelay));
-
-            // 使用merge而不是concat，允许前后章节并行预加载
-            return Flux.merge(nextChaptersFlux, prevChaptersFlux)
-                // 使用弹性线程池执行
+            // 使用弹性线程池执行
+            return preloadFlux
                 .subscribeOn(Schedulers.boundedElastic())
                 // 完成后记录日志
                 .doOnComplete(() -> LOG.info("章节预加载完成，书籍: " + book.getTitle() + "，预加载范围: 前面(" + startIndex + " - " + (currentChapterIndex - 1) + "), 后面(" + (currentChapterIndex + 1) + " - " + endIndex + ")"))

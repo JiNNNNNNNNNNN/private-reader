@@ -3,27 +3,26 @@ package com.lv.tool.privatereader.parser.site;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.exception.PrivateReaderException;
 import com.lv.tool.privatereader.parser.NovelParser;
-import com.lv.tool.privatereader.parser.common.ChapterAnalyzer;
-import com.lv.tool.privatereader.parser.common.TextDensityAnalyzer;
-import com.lv.tool.privatereader.parser.common.MetadataAnalyzer;
-import com.lv.tool.privatereader.parser.common.TextFormatter;
 import com.lv.tool.privatereader.parser.common.ChapterTitleUtils;
+import com.lv.tool.privatereader.parser.common.MetadataAnalyzer;
+import com.lv.tool.privatereader.parser.common.TextDensityAnalyzer;
+import com.lv.tool.privatereader.parser.common.TextFormatter;
 import com.lv.tool.privatereader.util.SafeHttpRequestExecutor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-import java.security.SecureRandom;
-import javax.net.ssl.SSLSocketFactory;
-import java.security.cert.X509Certificate;
 
 /**
  * 通用网络小说解析器，用于智能解析网络小说网站

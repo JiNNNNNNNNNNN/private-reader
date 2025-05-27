@@ -100,6 +100,13 @@ public interface NotificationService {
      */
     void navigateChapter(@NotNull com.intellij.openapi.project.Project project, int direction);
 
+    /**
+     * 显示加载状态通知
+     * @param project 当前项目
+     * @param message 加载消息
+     */
+    void showLoadingNotification(@NotNull com.intellij.openapi.project.Project project, @NotNull String message);
+
     // Existing reactive methods (kept for compatibility if still used elsewhere)
     Mono<Notification> showChapterContent(@NotNull Book book, @NotNull String chapterId, @NotNull String content);
     Mono<Notification> showError(@NotNull String title, @NotNull String message);
