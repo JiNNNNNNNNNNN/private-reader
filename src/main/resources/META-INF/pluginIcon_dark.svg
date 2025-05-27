@@ -1,21 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <!-- 书本形状 - 使用 IDEA 推荐的暗色主题蓝色 #3592C4 -->
-    <path d="M5 5V35C5 36.3807 6.11929 37.5 7.5 37.5H32.5C33.8807 37.5 35 36.3807 35 35V5C35 3.61929 33.8807 2.5 32.5 2.5H7.5C6.11929 2.5 5 3.61929 5 5Z" fill="#3592C4"/>
+    <!-- 书本阴影 - 增加微妙的阴影效果 -->
+    <path d="M6 6V34C6 35.1046 6.89543 36 8 36H32C33.1046 36 34 35.1046 34 34V6C34 4.89543 33.1046 4 32 4H8C6.89543 4 6 4.89543 6 6Z" fill="#1E6A96" fill-opacity="0.4"/>
+    
+    <!-- 书本形状 - 使用 IDEA 推荐的暗色主题蓝色并添加渐变效果 -->
+    <path d="M5 5V35C5 36.3807 6.11929 37.5 7.5 37.5H32.5C33.8807 37.5 35 36.3807 35 35V5C35 3.61929 33.8807 2.5 32.5 2.5H7.5C6.11929 2.5 5 3.61929 5 5Z" fill="url(#paint0_linear)"/>
     
     <!-- 书页 -->
     <path d="M7.5 5H32.5V35H7.5V5Z" fill="#2B2B2B"/>
     
-    <!-- 书页纹理 - 简化为几条线，使用暗色主题灰色 #AFB1B3 -->
-    <rect x="10" y="10" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
-    <rect x="10" y="15" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
-    <rect x="10" y="20" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
-    <rect x="10" y="25" width="12.5" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.6"/>
+    <!-- 书脊阴影 -->
+    <rect x="7.5" y="5" width="1.5" height="30" fill="#1E6A96" fill-opacity="0.2"/>
     
-    <!-- 小锁图标（隐私）- 使用暗色主题灰色 -->
-    <rect x="17.5" y="27.5" width="5" height="5" rx="1" fill="#AFB1B3"/>
-    <path d="M16.25 27.5V25C16.25 23.6193 17.3693 22.5 18.75 22.5C20.1307 22.5 21.25 23.6193 21.25 25V27.5" stroke="#AFB1B3" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- 书页纹理 - 改进为更真实的书页效果，使用暗色主题灰色 #AFB1B3 -->
+    <rect x="10" y="10" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.5"/>
+    <rect x="10" y="15" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.5"/>
+    <rect x="10" y="20" width="20" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.5"/>
+    <rect x="10" y="25" width="12.5" height="1.5" rx="0.75" fill="#AFB1B3" fill-opacity="0.5"/>
     
-    <!-- 书签 - 使用 IDEA 推荐的暗色主题红色 #C75450 -->
-    <path d="M27.5 5V12.5L25 10L22.5 12.5V5H27.5Z" fill="#C75450"/>
+    <!-- 小锁图标（隐私）- 重新设计，减少锁环高度，增加锁体宽度，添加锁孔 -->
+    <rect x="17" y="27.5" width="6" height="5" rx="1" fill="#AFB1B3"/>
+    <path d="M18 27.5V26C18 24.8954 18.8954 24 20 24C21.1046 24 22 24.8954 22 26V27.5" stroke="#AFB1B3" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- 添加锁孔 -->
+    <circle cx="20" cy="30" r="1" fill="#2B2B2B" fill-opacity="0.9"/>
+    
+    <!-- 书签 - 使用 IDEA 推荐的暗色主题红色并优化形状 -->
+    <path d="M27.5 5V12.5L25 10L22.5 12.5V5H27.5Z" fill="url(#paint1_linear)"/>
+    
+    <!-- 定义渐变 -->
+    <defs>
+        <linearGradient id="paint0_linear" x1="5" y1="2.5" x2="35" y2="37.5" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#3592C4"/>
+            <stop offset="1" stop-color="#1E6A96"/>
+        </linearGradient>
+        <linearGradient id="paint1_linear" x1="22.5" y1="5" x2="27.5" y2="12.5" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#C75450"/>
+            <stop offset="1" stop-color="#A93F3B"/>
+        </linearGradient>
+    </defs>
 </svg> 
