@@ -109,15 +109,9 @@ public interface NotificationService {
     Mono<Notification> showNextPageReactive(); // Renamed to avoid conflict
     Mono<Notification> navigateChapterReactive(int direction); // Renamed to avoid conflict
 
-    /**
-     * 启动自动翻页 (可能用于主阅读面板)
-     *
-     * @param intervalSeconds 翻页间隔（秒）
-     */
-    void startAutoRead(int intervalSeconds);
+    // void startAutoRead(int intervalSeconds); // REMOVED
 
-    /**
-     * 停止自动翻页 (可能用于主阅读面板)
-     */
-    void stopAutoRead();
+    // void stopAutoRead(); // REMOVED
+
+    // Optional<String> getCurrentChapterTitle(); // Removed as it's not essential and might be fetched differently
 }

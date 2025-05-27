@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupActivity;
 import com.lv.tool.privatereader.service.ReaderModeSwitcher;
 import com.lv.tool.privatereader.storage.StorageManager;
+import com.lv.tool.privatereader.storage.DatabaseManager;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -39,6 +40,20 @@ public class PrivateReaderStartupActivity implements StartupActivity, DumbAware 
                 }
             } catch (Throwable t) {
                 LOG.error("PrivateReaderStartupActivity: Error explicitly getting ReaderModeSwitcher service", t);
+            }
+
+            // Trigger Database Migration
+            LOG.info("PrivateReaderStartupActivity: Attempting to run database migration...");
+            try {
+                DatabaseManager databaseManager = ApplicationManager.getApplication().getService(DatabaseManager.class);
+                if (databaseManager != null) {
+                    databaseManager.runMigrationIfNeeded();
+                    LOG.info("PrivateReaderStartupActivity: Database migration check completed.");
+                } else {
+                    LOG.error("PrivateReaderStartupActivity: DatabaseManager service not found, cannot run migration.");
+                }
+            } catch (Throwable t) {
+                LOG.error("PrivateReaderStartupActivity: Error during database migration check", t);
             }
 
             // 异步执行耗时任务

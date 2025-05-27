@@ -1,5 +1,6 @@
 package com.lv.tool.privatereader.settings;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -11,28 +12,20 @@ import org.jetbrains.annotations.NotNull;
 public class NotificationReaderSettings extends BaseSettings<NotificationReaderSettings> {
     private static final Logger LOG = Logger.getInstance(NotificationReaderSettings.class);
 
-    private boolean autoRead = true;
-    private int readIntervalSeconds = 5;
-    private boolean showUnreadCount = true;
     private boolean markAsReadOnClose = true;
     private int pageSize = 70;
     private boolean showPageNumber = true;
     private boolean enabled = false; // Default to disabled
-    private int updateIntervalSeconds = 30; // Default refresh interval
     private boolean showChapterTitle = true;
     private boolean showReadingProgress = true;
     private boolean showButtons = true; // 是否在通知栏中显示导航按钮
 
     @Override
     protected void copyFrom(NotificationReaderSettings source) {
-        this.autoRead = source.autoRead;
-        this.readIntervalSeconds = source.readIntervalSeconds;
-        this.showUnreadCount = source.showUnreadCount;
         this.markAsReadOnClose = source.markAsReadOnClose;
         this.pageSize = source.pageSize;
         this.showPageNumber = source.showPageNumber;
         this.enabled = source.enabled;
-        this.updateIntervalSeconds = source.updateIntervalSeconds;
         this.showChapterTitle = source.showChapterTitle;
         this.showReadingProgress = source.showReadingProgress;
         this.showButtons = source.showButtons;
@@ -41,48 +34,14 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     @Override
     protected NotificationReaderSettings getDefault() {
         NotificationReaderSettings settings = new NotificationReaderSettings();
-        settings.autoRead = true;
-        settings.readIntervalSeconds = 5;
-        settings.showUnreadCount = true;
         settings.markAsReadOnClose = true;
         settings.pageSize = 70;
         settings.showPageNumber = true;
         settings.enabled = false;
-        settings.updateIntervalSeconds = 30;
         settings.showChapterTitle = true;
         settings.showReadingProgress = true;
         settings.showButtons = true;
         return settings;
-    }
-
-    public boolean isAutoRead() {
-        ensureSettingsLoaded();
-        return autoRead;
-    }
-
-    public void setAutoRead(boolean autoRead) {
-        this.autoRead = autoRead;
-        markDirty();
-    }
-
-    public int getReadIntervalSeconds() {
-        ensureSettingsLoaded();
-        return readIntervalSeconds;
-    }
-
-    public void setReadIntervalSeconds(int readIntervalSeconds) {
-        this.readIntervalSeconds = readIntervalSeconds;
-        markDirty();
-    }
-
-    public boolean isShowUnreadCount() {
-        ensureSettingsLoaded();
-        return showUnreadCount;
-    }
-
-    public void setShowUnreadCount(boolean showUnreadCount) {
-        this.showUnreadCount = showUnreadCount;
-        markDirty();
     }
 
     public boolean isMarkAsReadOnClose() {
@@ -91,8 +50,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setMarkAsReadOnClose(boolean markAsReadOnClose) {
-        this.markAsReadOnClose = markAsReadOnClose;
-        markDirty();
+        if (this.markAsReadOnClose != markAsReadOnClose) {
+            this.markAsReadOnClose = markAsReadOnClose;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     public int getPageSize() {
@@ -101,8 +65,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setPageSize(int pageSize) {
-        this.pageSize = pageSize;
-        markDirty();
+        if (this.pageSize != pageSize) {
+            this.pageSize = pageSize;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     public boolean isShowPageNumber() {
@@ -111,8 +80,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setShowPageNumber(boolean showPageNumber) {
-        this.showPageNumber = showPageNumber;
-        markDirty();
+        if (this.showPageNumber != showPageNumber) {
+            this.showPageNumber = showPageNumber;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     public boolean isEnabled() {
@@ -121,18 +95,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-        markDirty();
-    }
-
-    public int getUpdateInterval() {
-        ensureSettingsLoaded();
-        return updateIntervalSeconds;
-    }
-
-    public void setUpdateInterval(int updateIntervalSeconds) {
-        this.updateIntervalSeconds = updateIntervalSeconds;
-        markDirty();
+        if (this.enabled != enabled) {
+            this.enabled = enabled;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     public boolean isShowChapterTitle() {
@@ -141,8 +110,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setShowChapterTitle(boolean showChapterTitle) {
-        this.showChapterTitle = showChapterTitle;
-        markDirty();
+        if (this.showChapterTitle != showChapterTitle) {
+            this.showChapterTitle = showChapterTitle;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     public boolean isShowReadingProgress() {
@@ -151,8 +125,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setShowReadingProgress(boolean showReadingProgress) {
-        this.showReadingProgress = showReadingProgress;
-        markDirty();
+        if (this.showReadingProgress != showReadingProgress) {
+            this.showReadingProgress = showReadingProgress;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     public boolean isShowButtons() {
@@ -161,8 +140,13 @@ public class NotificationReaderSettings extends BaseSettings<NotificationReaderS
     }
 
     public void setShowButtons(boolean showButtons) {
-        this.showButtons = showButtons;
-        markDirty();
+        if (this.showButtons != showButtons) {
+            this.showButtons = showButtons;
+            markDirty();
+            ApplicationManager.getApplication().getMessageBus()
+                            .syncPublisher(NotificationReaderSettingsListener.TOPIC)
+                            .settingsChanged();
+        }
     }
 
     // Renamed for clarity, as isShowPageNumber is already used

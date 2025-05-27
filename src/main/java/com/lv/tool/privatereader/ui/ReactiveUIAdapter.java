@@ -33,6 +33,9 @@ import java.util.Comparator;
 import java.util.stream.Collectors;
 import java.awt.Color;
 import org.jetbrains.annotations.NotNull;
+import java.net.URI;
+import java.net.URISyntaxException;
+import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
 
 /**
  * 响应式UI适配器
@@ -191,12 +194,16 @@ public final class ReactiveUIAdapter {
      * @param chapter 章节
      * @param contentTextArea 内容文本区域
      * @param loadingLabel 加载状态标签
+     * @param chapterTitleLabel 用于显示当前章节标题的标签 (新增)
      */
-    public void loadChapterContent(Book book, Chapter chapter, JTextArea contentTextArea, JLabel loadingLabel) {
+    public void loadChapterContent(Book book, Chapter chapter, JTextArea contentTextArea, JLabel loadingLabel, JLabel chapterTitleLabel) {
         // 显示加载状态
         runOnUI(() -> {
             loadingLabel.setVisible(true);
             contentTextArea.setText("正在加载...");
+            if (chapterTitleLabel != null) {
+                chapterTitleLabel.setText("加载中..."); // 初始时显示加载中
+            }
         });
 
         // 记录详细的日志
@@ -205,13 +212,19 @@ public final class ReactiveUIAdapter {
         // 检查书籍和章节参数
         if (book == null) {
             LOG.error("[调试] 加载章节内容失败: 书籍参数为 null");
-            runOnUI(() -> contentTextArea.setText("加载失败: 书籍参数无效"));
+            runOnUI(() -> {
+                contentTextArea.setText("加载失败: 书籍参数无效");
+                if (chapterTitleLabel != null) chapterTitleLabel.setText(" ");
+            });
             return;
         }
 
         if (chapter == null || chapter.url() == null || chapter.url().isEmpty()) {
             LOG.error("[调试] 加载章节内容失败: 章节参数无效");
-            runOnUI(() -> contentTextArea.setText("加载失败: 章节参数无效"));
+            runOnUI(() -> {
+                contentTextArea.setText("加载失败: 章节参数无效");
+                if (chapterTitleLabel != null) chapterTitleLabel.setText(" ");
+            });
             return;
         }
 
@@ -219,7 +232,10 @@ public final class ReactiveUIAdapter {
         NovelParser parser = book.getParser();
         if (parser == null) {
             LOG.error("[调试] 加载章节内容失败: 无法获取解析器, 书籍 URL=" + book.getUrl());
-            runOnUI(() -> contentTextArea.setText("加载失败: 无法获取解析器。\n\n请检查书籍 URL 是否有效: " + book.getUrl()));
+            runOnUI(() -> {
+                contentTextArea.setText("加载失败: 无法获取解析器。\n\n请检查书籍 URL 是否有效: " + book.getUrl());
+                if (chapterTitleLabel != null) chapterTitleLabel.setText("解析器错误");
+            });
             return;
         }
 
@@ -243,8 +259,23 @@ public final class ReactiveUIAdapter {
                         if (content != null && !content.isEmpty()) {
                             contentTextArea.setText(content);
                             contentTextArea.setCaretPosition(0);  // 滚动到顶部
+                            if (chapterTitleLabel != null) {
+                                chapterTitleLabel.setText("当前章节: " + chapter.title());
+                            }
+                            // 发布章节变更事件
+                            // 确保 chapter 是 NovelParser.Chapter 类型
+                            if (chapter instanceof com.lv.tool.privatereader.parser.NovelParser.Chapter) {
+                                CurrentChapterNotifier publisher = ApplicationManager.getApplication().getMessageBus().syncPublisher(CurrentChapterNotifier.TOPIC);
+                                publisher.currentChapterChanged(book, (com.lv.tool.privatereader.parser.NovelParser.Chapter) chapter);
+                                LOG.debug("ReactiveUIAdapter published currentChapterChanged event for chapter: " + chapter.title());
+                            } else {
+                                LOG.warn("Cannot publish event from ReactiveUIAdapter: chapter is not NovelParser.Chapter. Actual: " + chapter.getClass().getName());
+                            }
                         } else {
                             contentTextArea.setText("章节内容为空。请检查章节 URL 是否有效: " + chapter.url());
+                            if (chapterTitleLabel != null) {
+                                chapterTitleLabel.setText("内容为空");
+                            }
                         }
                     });
 
@@ -252,22 +283,13 @@ public final class ReactiveUIAdapter {
                     preloadNextChapters(book, chapter);
                 },
                 error -> {
-                    LOG.error("[调试] 加载章节内容失败: 书籍=" + book.getTitle() + ", 章节=" + chapter.title() + ", 错误=" + error.getMessage(), error);
-                    handleError("加载章节内容失败: " + chapter.title(), error);
+                    LOG.error("[调试] 处理章节内容加载错误: " + error.getMessage(), error);
                     runOnUI(() -> {
-                        StringBuilder errorMessage = new StringBuilder();
-                        errorMessage.append("加载失败: ").append(error.getMessage()).append("\n\n");
-                        errorMessage.append("调试信息:\n");
-                        errorMessage.append("书籍: ").append(book.getTitle()).append("\n");
-                        errorMessage.append("书籍 URL: ").append(book.getUrl()).append("\n");
-                        errorMessage.append("章节: ").append(chapter.title()).append("\n");
-                        errorMessage.append("章节 URL: ").append(chapter.url()).append("\n\n");
-                        errorMessage.append("请尝试以下操作:\n");
-                        errorMessage.append("1. 检查网络连接\n");
-                        errorMessage.append("2. 刷新章节列表\n");
-                        errorMessage.append("3. 重新选择章节\n");
-                        errorMessage.append("4. 重启应用程序");
-                        contentTextArea.setText(errorMessage.toString());
+                        contentTextArea.setText("加载章节内容时出错: " + error.getMessage());
+                        if (chapterTitleLabel != null) {
+                            chapterTitleLabel.setText("加载失败");
+                        }
+                        handleError("加载章节 '" + chapter.title() + "' 失败", error); // 调用已有的错误处理
                     });
                 }
             );
@@ -567,9 +589,9 @@ public final class ReactiveUIAdapter {
         String title = url;
         if (url.startsWith("http")) {
             try {
-                java.net.URL urlObj = new java.net.URL(url);
+                java.net.URL urlObj = new java.net.URI(url).toURL();
                 title = urlObj.getHost();
-            } catch (Exception e) {
+            } catch (URISyntaxException | java.net.MalformedURLException e) {
                 // 忽略解析错误
             }
         }

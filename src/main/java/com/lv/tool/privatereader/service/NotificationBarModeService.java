@@ -1,27 +1,19 @@
 package com.lv.tool.privatereader.service;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
+import com.lv.tool.privatereader.settings.NotificationReaderSettingsListener;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
-import com.lv.tool.privatereader.storage.SettingsStorage;
-import com.lv.tool.privatereader.ui.actions.NextChapterAction;
-import com.lv.tool.privatereader.ui.actions.NextPageAction;
-import com.lv.tool.privatereader.ui.actions.PrevChapterAction;
-import com.lv.tool.privatereader.ui.actions.PrevPageAction;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.util.Alarm;
 
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 通知栏模式服务，负责管理通知栏阅读模式的状态和行为。
@@ -34,8 +26,7 @@ import java.util.concurrent.TimeUnit;
  * 而使用 book.getLastReadPageOrDefault(1) 作为页码，这会导致页码始终是 1 或者是 book 对象中已有的页码。
  */
 @Service(Service.Level.APP)
-@Singleton
-public class NotificationBarModeService implements Disposable {
+public class NotificationBarModeService implements Disposable, NotificationReaderSettingsListener {
 
     private static final Logger LOG = Logger.getInstance(NotificationBarModeService.class);
 
@@ -44,9 +35,8 @@ public class NotificationBarModeService implements Disposable {
     private final ChapterService chapterService;
     private final ReadingProgressRepository readingProgressRepository;
     private final NotificationReaderSettings notificationReaderSettings;
-    private final Project project; // Assuming project context is needed for actions/services
+    private Project project; // Made non-final to allow initialization in constructor body
 
-    private Alarm refreshAlarm;
     private String currentBookId;
     private String currentChapterId;
     private int currentPageNumber;
@@ -59,33 +49,28 @@ public class NotificationBarModeService implements Disposable {
         return ApplicationManager.getApplication().getService(NotificationBarModeService.class);
     }
 
-    @Inject
-    public NotificationBarModeService(
-            Project project,
-            ReaderModeSettings readerModeSettings,
-            NotificationService notificationService,
-            ChapterService chapterService,
-            ReadingProgressRepository readingProgressRepository,
-            NotificationReaderSettings notificationReaderSettings) {
+    public NotificationBarModeService() {
         LOG.info("NotificationBarModeService 构造函数被调用");
 
-        // 如果 project 为 null，尝试获取第一个打开的项目
-        if (project == null) {
-            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
-            if (openProjects.length > 0) {
-                project = openProjects[0];
-                LOG.info("使用第一个打开的项目: " + project.getName());
-            } else {
-                LOG.warn("没有打开的项目，NotificationBarModeService 可能无法正常工作");
-            }
+        this.readerModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        this.notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
+        this.chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
+        this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
+        this.notificationReaderSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
+
+        Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+        if (openProjects.length > 0) {
+            this.project = openProjects[0];
+            LOG.info("使用第一个打开的项目: " + this.project.getName());
+        } else {
+            this.project = null;
+            LOG.warn("没有打开的项目，NotificationBarModeService 可能无法在构造时确定默认项目");
         }
 
-        this.project = project;
-        this.readerModeSettings = readerModeSettings;
-        this.notificationService = notificationService;
-        this.chapterService = chapterService;
-        this.readingProgressRepository = readingProgressRepository;
-        this.notificationReaderSettings = notificationReaderSettings;
+        // Subscribe to settings changes
+        ApplicationManager.getApplication().getMessageBus().connect(this) // 'this' as Disposable
+            .subscribe(NotificationReaderSettingsListener.TOPIC, this);
+        LOG.info("NotificationBarModeService subscribed to NotificationReaderSettingsListener.");
 
         LOG.info("NotificationBarModeService 初始化完成");
     }
@@ -121,20 +106,11 @@ public class NotificationBarModeService implements Disposable {
         }
 
         this.currentPageNumber = pageNumber; // 更新为有效的页码
-        String currentPageContent = notificationService.getPageContent(chapterContent, pageNumber);
-
-        // 4. Build notification content (including title, progress, content, and navigation controls)
-        String notificationTitle = "正在阅读: " + (notificationReaderSettings.isShowChapterTitle() ? chapterTitle : "");
-        String progressText = notificationReaderSettings.isShowReadingProgress() ?
-                "进度: 第 " + pageNumber + " 页，共 " + totalPages + " 页" : "";
-        String notificationContent = currentPageContent + "\n\n" + progressText;
 
         // 5. Use NotificationService to display notification with actions
-        // NotificationService needs a method to show content with actions
-        notificationService.showChapterContent(project, bookId, chapterId, pageNumber, notificationTitle, notificationContent);
-
-        // 6. Start timer to refresh notification based on settings interval
-        startRefreshTimer();
+        // NotificationService will handle pagination and display the correct page.
+        // Pass the full chapterContent and the original chapterTitle.
+        notificationService.showChapterContent(project, bookId, chapterId, pageNumber, chapterTitle, chapterContent);
 
         // 7. 记录日志
         System.out.println("[通知栏模式] 激活通知栏模式: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + pageNumber);
@@ -148,9 +124,6 @@ public class NotificationBarModeService implements Disposable {
      * Deactivates the notification bar reading mode.
      */
     public void deactivateNotificationBarMode() {
-        // 1. Stop refresh timer
-        stopRefreshTimer();
-
         // 2. Close all notifications
         notificationService.closeAllNotifications();
 
@@ -328,52 +301,74 @@ public class NotificationBarModeService implements Disposable {
         LOG.info("通知栏模式设置初始化完成");
     }
 
-    private void startRefreshTimer() {
-        stopRefreshTimer(); // Stop any existing timer
-
-        long intervalMillis = TimeUnit.SECONDS.toMillis(notificationReaderSettings.getUpdateInterval());
-        if (intervalMillis > 0) {
-            refreshAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD, this);
-            refreshAlarm.addRequest(() -> {
-                if (readerModeSettings.getCurrentMode() == ReaderModeSettings.Mode.NOTIFICATION_BAR &&
-                    currentBookId != null && currentChapterId != null) {
-                    // Refresh current page content and progress
-                    String chapterContent = chapterService.getChapterContent(currentBookId, currentChapterId);
-                    // NotificationService needs to know the current page internally or take it as a parameter
-                    int totalPages = notificationService.calculateTotalPages(chapterContent);
-                    String currentPageContent = notificationService.getPageContent(chapterContent, currentPageNumber);
-
-                    String progressText = notificationReaderSettings.isShowReadingProgress() ?
-                            "进度: 第 " + currentPageNumber + " 页，共 " + totalPages + " 页" : "";
-                    String notificationContent = currentPageContent + "\n\n" + progressText;
-
-                    // NotificationService needs a method to update the existing notification
-                    notificationService.updateNotificationContent(project, notificationContent);
-                }
-                startRefreshTimer(); // Schedule the next refresh
-            }, intervalMillis);
-        }
-
-        // Update Memory Bank
-        updateActiveContext("Started notification refresh timer with interval: " + notificationReaderSettings.getUpdateInterval() + " seconds.");
-        updateProgress("Started implementing notification refresh timer.");
-    }
-
-    private void stopRefreshTimer() {
-        if (refreshAlarm != null) {
-            refreshAlarm.cancelAllRequests();
-            refreshAlarm = null;
-        }
-
-        // Update Memory Bank
-        updateActiveContext("Stopped notification refresh timer.");
-        updateProgress("Started implementing stopping notification refresh timer.");
-    }
-
     @Override
     public void dispose() {
-        stopRefreshTimer();
+        // Connection to MessageBus is automatically disposed as 'this' was passed to connect()
         // Any other cleanup
+        LOG.info("NotificationBarModeService disposed.");
+    }
+
+    // Listener method for settings changes
+    @Override
+    public void settingsChanged() {
+        LOG.info("NotificationReaderSettings changed event received by NotificationBarModeService.");
+        // Check if currently in notification bar mode and if essential data is present
+        if (project != null && // Ensure project context is available
+            readerModeSettings.getCurrentMode() == ReaderModeSettings.Mode.NOTIFICATION_BAR &&
+            currentBookId != null && !currentBookId.isEmpty() &&
+            currentChapterId != null && !currentChapterId.isEmpty()) {
+            
+            LOG.info("Currently in notification bar mode with an active book/chapter. Triggering refresh due to settings change.");
+            refreshNotificationDisplay();
+        } else {
+            LOG.info("Not in notification bar mode, or no current book/chapter/project, or project is null. Skipping refresh on settings change.");
+        }
+    }
+
+    private void refreshNotificationDisplay() {
+        if (project == null) {
+            LOG.warn("Cannot refresh notification display: project is null at the beginning of refreshNotificationDisplay.");
+            // Attempt to re-acquire project context if it was lost (e.g. original project closed)
+            Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+            if (openProjects.length > 0) {
+                this.project = openProjects[0]; // Use the first available open project
+                LOG.info("Re-acquired project context for refresh: " + this.project.getName());
+            } else {
+                LOG.error("No open projects found. Cannot refresh notification display.");
+                // Optionally, show an error to the user or try to handle this state.
+                return;
+            }
+        }
+
+        if (currentBookId == null || currentChapterId == null) {
+            LOG.warn("Cannot refresh notification display: currentBookId or currentChapterId is null.");
+            return;
+        }
+
+        LOG.debug("Attempting to refresh notification display for book: " + currentBookId +
+                  ", chapter: " + currentChapterId + ", page: " + currentPageNumber);
+        try {
+            // Fetch the full chapter content again, as settings like pageSize might have changed
+            String chapterContent = chapterService.getChapterContent(currentBookId, currentChapterId);
+            String chapterTitle = chapterService.getChapterTitle(currentBookId, currentChapterId);
+
+            if (chapterContent == null || chapterContent.isEmpty()) {
+                LOG.error("Failed to refresh notification: chapter content is null or empty for " + currentChapterId);
+                notificationService.showError("刷新失败", "无法获取章节内容: " + chapterTitle);
+                return;
+            }
+            
+            // currentPageNumber is 1-based and maintained by this service.
+            // NotificationServiceImpl.showChapterContent is designed to take the full content
+            // and the target 1-based page number, handling pagination internally.
+            notificationService.showChapterContent(project, currentBookId, currentChapterId, currentPageNumber, chapterTitle, chapterContent);
+            LOG.info("Notification display refreshed successfully via showChapterContent due to settings change.");
+
+        } catch (Exception e) {
+            LOG.error("Error during settings-triggered notification display refresh: " + e.getMessage(), e);
+            // Optionally, inform the user via a notification
+            notificationService.showError("通知刷新失败", "应用新设置时出错: " + e.getMessage());
+        }
     }
 
     // Helper methods to update Memory Bank - these will be replaced by actual tool calls

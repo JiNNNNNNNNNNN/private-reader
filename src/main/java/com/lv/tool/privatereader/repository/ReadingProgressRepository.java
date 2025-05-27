@@ -73,24 +73,4 @@ public interface ReadingProgressRepository {
      */
     @NotNull
     Optional<BookProgressData> getLastReadProgressData();
-
-    /**
-     * 更新章节总数 (不再由此仓库管理)
-     *
-     * @param book 书籍对象
-     * @param totalChapters 章节总数
-     * @deprecated Total chapters is metadata, managed by BookRepository.
-     */
-    @Deprecated
-    void updateTotalChapters(@NotNull Book book, int totalChapters);
-    
-    /**
-     * 更新当前章节索引 (不再由此仓库管理)
-     *
-     * @param book 书籍对象
-     * @param currentChapterIndex 当前章节索引
-     * @deprecated Current chapter index is part of progress handled by updateProgress.
-     */
-    @Deprecated
-    void updateCurrentChapter(@NotNull Book book, int currentChapterIndex);
 } 

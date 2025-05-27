@@ -147,20 +147,6 @@ public final class SqliteReadingProgressRepository implements ReadingProgressRep
         }
     }
 
-    // --- Methods NOT suitable for this repository --- //
-
-    @Override
-    public void updateTotalChapters(@NotNull Book book, int totalChapters) {
-        LOG.warn("updateTotalChapters is not supported by SqliteReadingProgressRepository. Book metadata should be handled by BookRepository.");
-        // Optional: throw new UnsupportedOperationException(...);
-    }
-
-    @Override
-    public void updateCurrentChapter(@NotNull Book book, int currentChapterIndex) {
-        LOG.warn("updateCurrentChapter is not supported by SqliteReadingProgressRepository. Reading progress (chapter/position) is handled by updateProgress.");
-        // Optional: throw new UnsupportedOperationException(...);
-    }
-
     // --- Additional methods for querying progress --- //
 
     /**

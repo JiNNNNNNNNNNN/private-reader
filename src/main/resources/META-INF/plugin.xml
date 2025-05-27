@@ -142,6 +142,8 @@
 
     <!-- 使用 StartupActivity 替代 AppLifecycleListener -->
     <postStartupActivity implementation="com.lv.tool.privatereader.initialization.PrivateReaderStartupActivity"/>
+    <!-- New Project Initialization Activity -->
+    <postStartupActivity implementation="com.lv.tool.privatereader.initialization.ProjectInitializationActivity"/>
 
     <!-- 添加源管理器服务 -->
     <applicationService serviceInterface="com.lv.tool.privatereader.source.SourceManager"
@@ -240,10 +242,12 @@
   </extensions>
 
   <!-- Add Project Listener Registration -->
+  <!-- 
   <projectListeners>
     <listener class="com.lv.tool.privatereader.listener.ProjectOpenListener"
               topic="com.intellij.openapi.project.ProjectManagerListener"/>
   </projectListeners>
+  -->
 
   <actions>
     <group id="PrivateReader.Group"

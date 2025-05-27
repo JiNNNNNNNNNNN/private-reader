@@ -19,6 +19,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.service.NotificationService;
+import com.intellij.util.ui.JBUI;
 import reactor.core.publisher.Mono;
 
 import javax.swing.*;
@@ -27,6 +28,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.time.Duration;
+import java.util.List;
 
 /**
  * 阅读器面板
@@ -61,6 +63,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     private final JButton addBookButton;
     private final JButton deleteBookButton;
     private final JTextField searchField;
+    private final JLabel currentChapterDisplayLabel;
 
     // 当前选中的书籍和章节
     private Book selectedBook;
@@ -68,6 +71,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
     // 待选择的书籍（用于处理书籍列表尚未加载完成的情况）
     private Book pendingBookToSelect;
+    private volatile boolean isLoadingState = false; // Flag to prevent listener chain reactions
 
     public ReaderPanel(Project project) {
         super(true);
@@ -94,6 +98,135 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         // 注册设置监听器
         messageBusConnection.subscribe(ReaderSettingsListener.TOPIC, readerSettingsListener);
         messageBusConnection.subscribe(CacheSettingsListener.TOPIC, cacheSettingsListener);
+
+        // 订阅章节变更事件 (由通知栏模式等发布)
+        messageBusConnection.subscribe(com.lv.tool.privatereader.messaging.CurrentChapterNotifier.TOPIC, new com.lv.tool.privatereader.messaging.CurrentChapterNotifier() {
+            @Override
+            public void currentChapterChanged(Book changedBook, Chapter newChapterFromEvent) {
+                SwingUtilities.invokeLater(() -> {
+                    // Capture the state *before* this event handler potentially modifies selectedBook/selectedChapter
+                    // These are effectively final for the logic within this invokeLater runnable.
+                    final Book bookAsOfHandlerStart = ReaderPanel.this.selectedBook;
+                    final Chapter chapterAsOfHandlerStart = ReaderPanel.this.selectedChapter;
+
+                    LOG.debug("ReaderPanel (CurrentChapterNotifier) event received. Incoming Book: " + (changedBook != null ? changedBook.getTitle() : "null") +
+                              ", Incoming Chapter: " + (newChapterFromEvent != null ? newChapterFromEvent.title() : "null") +
+                              ". State at handler start: selectedBook=" + (bookAsOfHandlerStart != null ? bookAsOfHandlerStart.getTitle() : "null") +
+                              ", selectedChapter=" + (chapterAsOfHandlerStart != null ? chapterAsOfHandlerStart.title() : "null"));
+                    
+                    isLoadingState = true; // Set flag at the beginning of the event handler logic
+                    try {
+                        if (changedBook == null || newChapterFromEvent == null) {
+                            LOG.warn("ReaderPanel (CurrentChapterNotifier): Received null book or chapter in event. Ignoring.");
+                            return;
+                        }
+
+                        if (bookAsOfHandlerStart == null || !bookAsOfHandlerStart.getId().equals(changedBook.getId())) {
+                            // This logic path implies the book context is wrong for the current panel state or panel has no book selected.
+                            // The original code had complex handling here which mostly resulted in returning.
+                            // For robust handling, if the panel's selected book is not what the event is for,
+                            // it should probably ignore the event or attempt to switch to the new book context if appropriate.
+                            // Given the current repeated event issue, we'll keep it simple: if book context doesn't match, log and ignore.
+                            LOG.warn("ReaderPanel (CurrentChapterNotifier): Event book '" + changedBook.getTitle() +
+                                     "' does not match current selected book '" + (bookAsOfHandlerStart != null ? bookAsOfHandlerStart.getTitle() : "None") +
+                                     "' or no book selected. Ignoring event to prevent context mismatch loading.");
+                            return; 
+                        }
+
+                        // At this point, bookAsOfHandlerStart (which is this.selectedBook before modification in this handler) matches changedBook.
+                        // Now check if the newChapterFromEvent is the same as chapterAsOfHandlerStart and content is already loaded.
+                        if (chapterAsOfHandlerStart != null &&
+                            chapterAsOfHandlerStart.url().equals(newChapterFromEvent.url()) &&
+                            contentTextArea.getText() != null && !contentTextArea.getText().trim().isEmpty()) {
+                            
+                            LOG.info("ReaderPanel (CurrentChapterNotifier): Event for already selected chapter '" + newChapterFromEvent.title() +
+                                     "' (URL: " + newChapterFromEvent.url() + ") with content present. Skipping redundant loadChapterContent.");
+
+                            // Ensure internal state reflects the event's chapter, though it's the same.
+                            ReaderPanel.this.selectedChapter = newChapterFromEvent;
+                            
+                            // Ensure chapter list model is up-to-date and the chapter is selected/visible.
+                            // This might be useful if the chapter list was somehow altered externally, though unlikely.
+                            List<Chapter> chaptersFromCache = bookAsOfHandlerStart.getCachedChapters(); // Use bookAsOfHandlerStart as it's the confirmed current book
+                            if (chaptersFromCache != null) {
+                                // Quick check: if model size differs, refresh. More sophisticated checks could compare elements.
+                                if (chaptersListModel.getSize() != chaptersFromCache.size()) {
+                                    chaptersListModel.clear();
+                                    for (Chapter chap : chaptersFromCache) chaptersListModel.addElement(chap);
+                                    LOG.debug("ReaderPanel (CurrentChapterNotifier): Chapter list model was refreshed during skip-load path for book " + bookAsOfHandlerStart.getTitle());
+                                }
+                                // Ensure selection
+                                for (int i = 0; i < chaptersListModel.getSize(); i++) {
+                                    if (chaptersListModel.getElementAt(i).url().equals(newChapterFromEvent.url())) {
+                                        if (chaptersList.getSelectedIndex() != i) {
+                                            chaptersList.setSelectedIndex(i); // isLoadingState=true protects listener
+                                        }
+                                        chaptersList.ensureIndexIsVisible(i);
+                                        break;
+                                    }
+                                }
+                            }
+                            if (currentChapterDisplayLabel != null) {
+                                currentChapterDisplayLabel.setText(newChapterFromEvent.title());
+                            }
+                            return; // Successfully skipped redundant load
+                        }
+
+                        // Proceed with normal update and load because it's a new chapter or content was empty.
+                        LOG.debug("ReaderPanel (CurrentChapterNotifier): Processing as new/changed chapter event for '" + newChapterFromEvent.title() + "'.");
+                        ReaderPanel.this.selectedBook = changedBook; // Should be same as bookAsOfHandlerStart here
+                        ReaderPanel.this.selectedChapter = newChapterFromEvent; // Update internal state for the chapter
+
+                        List<Chapter> chaptersFromCache = ReaderPanel.this.selectedBook.getCachedChapters();
+                        if (chaptersFromCache != null) {
+                            chaptersListModel.clear();
+                            for (Chapter chap : chaptersFromCache) {
+                                chaptersListModel.addElement(chap);
+                            }
+                            LOG.debug("ReaderPanel (CurrentChapterNotifier): chaptersListModel refreshed with " + chaptersListModel.getSize() + " chapters for book '" + ReaderPanel.this.selectedBook.getTitle() + "' from cache.");
+
+                            boolean foundInRefreshedList = false;
+                            for (int i = 0; i < chaptersListModel.getSize(); i++) {
+                                if (chaptersListModel.getElementAt(i).url().equals(newChapterFromEvent.url())) {
+                                    if (chaptersList.getSelectedIndex() != i) {
+                                        chaptersList.setSelectedIndex(i); // isLoadingState=true protects listener
+                                    }
+                                    chaptersList.ensureIndexIsVisible(i);
+                                    foundInRefreshedList = true;
+                                    break;
+                                }
+                            }
+
+                            if (foundInRefreshedList) {
+                                LOG.debug("ReaderPanel (CurrentChapterNotifier): Successfully selected chapter '" + newChapterFromEvent.title() + "' in refreshed list. Calling loadChapterContent.");
+                                loadChapterContent(ReaderPanel.this.selectedBook, ReaderPanel.this.selectedChapter);
+                            } else {
+                                LOG.warn("ReaderPanel (CurrentChapterNotifier): Chapter URL '" + newChapterFromEvent.url() + "' not found in refreshed chapters for book '" + ReaderPanel.this.selectedBook.getTitle() + "'.");
+                                contentTextArea.setText(""); 
+                                if (currentChapterDisplayLabel != null) {
+                                    currentChapterDisplayLabel.setText("章节 ( " + newChapterFromEvent.title() + " ) 未在列表找到");
+                                }
+                            }
+                        } else {
+                            LOG.warn("ReaderPanel (CurrentChapterNotifier): Book's cachedChapters is null for '" + ReaderPanel.this.selectedBook.getTitle() + "'. Cannot update chapter list or select chapter.");
+                            chaptersListModel.clear();
+                            contentTextArea.setText("");
+                            if (currentChapterDisplayLabel != null) {
+                                currentChapterDisplayLabel.setText("章节列表为空");
+                            }
+                        }
+                        // Update display label (it might have been set by loadChapterContent too)
+                        if (ReaderPanel.this.selectedChapter != null && currentChapterDisplayLabel != null) {
+                             currentChapterDisplayLabel.setText(ReaderPanel.this.selectedChapter.title());
+                        }
+                    } catch (Exception ex) {
+                        LOG.error("ReaderPanel (CurrentChapterNotifier): Error processing chapter changed event: " + ex.getMessage(), ex);
+                    } finally {
+                        SwingUtilities.invokeLater(() -> isLoadingState = false); // Clear flag after all operations
+                    }
+                });
+            }
+        });
 
         // 设置章节加载完成回调
         uiAdapter.setOnChaptersLoaded(this::selectLastReadChapter);
@@ -125,6 +258,11 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         addBookButton = new JButton("添加书籍");
         deleteBookButton = new JButton("删除书籍");
         searchField = new JTextField(20);
+
+        // 初始化新增的章节标题标签
+        currentChapterDisplayLabel = new JLabel(" "); // 初始为空白
+        currentChapterDisplayLabel.setFont(new Font("Microsoft YaHei", Font.BOLD, 14)); // 设置字体
+        currentChapterDisplayLabel.setBorder(JBUI.Borders.empty(5, 10)); // 设置边距
 
         // 设置布局
         setupLayout();
@@ -169,6 +307,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
         // 创建右侧面板（内容显示）
         JPanel rightPanel = new JPanel(new BorderLayout());
+        rightPanel.add(currentChapterDisplayLabel, BorderLayout.NORTH);
         rightPanel.add(contentScrollPane, BorderLayout.CENTER);
 
         // 加载状态面板
@@ -200,36 +339,32 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     private void setupEventListeners() {
         // 书籍列表选择事件
         booksList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
+            if (!e.getValueIsAdjusting() && !isLoadingState) { // Check isLoadingState
                 Book newlySelectedBook = booksList.getSelectedValue();
                 if (newlySelectedBook != null && !newlySelectedBook.equals(selectedBook)) {
                     saveCurrentProgress(); // Save progress before switching
                     selectedBook = newlySelectedBook;
                     LOG.debug("Book selection changed to: " + selectedBook.getTitle() + " (ID: " + selectedBook.getId() + ")");
 
-                    // No need to manually call getBookById here.
-                    // The Book object from the list *should* already contain the latest progress
-                    // because BookService.getAllBooks now combines metadata and progress.
-                    // We just need to ensure getAllBooks is called appropriately (e.g., on refresh/init).
-
-                    // Update UI based on the selected book (which has progress info)
                     chaptersListModel.clear();
                     contentTextArea.setText("");
-                    loadChapters(selectedBook); // This uses the selectedBook with progress
-                    // selectLastReadChapter will be called by the uiAdapter callback if chapters load successfully
+                    if (currentChapterDisplayLabel != null) {
+                        currentChapterDisplayLabel.setText(" ");
+                    }
+                    loadChapters(selectedBook);
                 }
             }
         });
 
         // 章节列表选择事件
         chaptersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
+            if (!e.getValueIsAdjusting() && !isLoadingState) { // Check isLoadingState
                  Chapter newlySelectedChapter = chaptersList.getSelectedValue();
                  if (newlySelectedChapter != null && !newlySelectedChapter.equals(selectedChapter) && selectedBook != null) {
                     // Don't save progress on simple selection change, only on explicit actions (like switching book/chapter via click)
                     // saveCurrentProgress();
                     selectedChapter = newlySelectedChapter;
-                    LOG.debug("Chapter selection changed to: " + selectedChapter.title());
+                    LOG.debug("Chapter selection changed by user interaction to: " + selectedChapter.title());
                     loadChapterContent(selectedBook, selectedChapter); // Load content for newly selected chapter
                  }
             }
@@ -309,6 +444,9 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
     private void selectAndHighlightLastReadBook() {
         LOG.info("Selecting and highlighting last read book...");
 
+        SwingUtilities.invokeLater(() -> { // Ensure all operations are on EDT
+            isLoadingState = true;
+            try {
         // 检查是否有待选择的书籍
         if (pendingBookToSelect != null) {
             LOG.info("发现待选择的书籍: " + pendingBookToSelect.getTitle());
@@ -326,32 +464,30 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
             if (indexToSelect != -1) {
                 LOG.info("在列表中找到待选择的书籍，设置选中项");
-                // 先设置 selectedBook，这样在触发选择事件时就能使用完整的书籍信息
-                selectedBook = booksListModel.getElementAt(indexToSelect); // 使用模型中的实例
-                // 触发选择事件并确保高亮显示
+                        selectedBook = booksListModel.getElementAt(indexToSelect);
                 booksList.setSelectedIndex(indexToSelect);
                 booksList.ensureIndexIsVisible(indexToSelect);
-                // 设置选中背景色
                 booksList.setSelectionBackground(SELECTION_BACKGROUND);
                 booksList.setSelectionForeground(SELECTION_FOREGROUND);
-                // 直接加载章节
+                        LOG.debug("[selectAndHighlightLastReadBook] Directly calling loadChapters for pending book.");
                 loadChapters(selectedBook);
-                return; // 已处理待选择的书籍，不需要继续加载最后阅读的书籍
+                        return; 
             } else {
                 LOG.warn("在列表中未找到待选择的书籍，继续加载最后阅读的书籍");
-                // 如果在列表中未找到待选择的书籍，继续加载最后阅读的书籍
             }
         }
 
         // 获取最后阅读的书籍并自动选择
         if (bookService != null) {
             bookService.getLastReadBook()
-                    .publishOn(ReactiveSchedulers.getInstance().ui())
+                            .publishOn(ReactiveSchedulers.getInstance().ui()) // Ensure subsequent operations are on UI thread
                     .subscribe(
                             lastReadBook -> {
+                                        // This block is now on EDT
+                                        try {
+                                            isLoadingState = true; // Re-affirm as this is a new event loop from reactive stream
                                 if (lastReadBook != null) {
                                     LOG.info("Found last read book: " + lastReadBook.getTitle());
-                                    // 查找书籍在模型中的索引
                                     int indexToSelect = -1;
                                     for (int i = 0; i < booksListModel.getSize(); i++) {
                                         if (booksListModel.getElementAt(i).equals(lastReadBook)) {
@@ -359,50 +495,71 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                                             break;
                                         }
                                     }
-
                                     if (indexToSelect != -1) {
-                                        // 先设置 selectedBook，这样在触发选择事件时就能使用完整的书籍信息
-                                        selectedBook = booksListModel.getElementAt(indexToSelect); // 使用模型中的实例
-                                        // 触发选择事件并确保高亮显示
+                                                    selectedBook = booksListModel.getElementAt(indexToSelect);
                                         booksList.setSelectedIndex(indexToSelect);
                                         booksList.ensureIndexIsVisible(indexToSelect);
-                                        // 设置选中背景色
                                         booksList.setSelectionBackground(SELECTION_BACKGROUND);
                                         booksList.setSelectionForeground(SELECTION_FOREGROUND);
-                                        // 直接加载章节
+                                                    LOG.debug("[selectAndHighlightLastReadBook] Directly calling loadChapters for last read book.");
                                         loadChapters(selectedBook);
                                     } else {
                                         LOG.warn("Last read book found but not present in the loaded list model. Selecting first book instead.");
-                                        selectAndHighlightFirstBook();
+                                                    selectAndHighlightFirstBook(); // This will also manage isLoadingState
                                     }
                                 } else {
                                     LOG.info("No last read book found, selecting first book if available");
-                                    selectAndHighlightFirstBook();
+                                                selectAndHighlightFirstBook(); // This will also manage isLoadingState
+                                            }
+                                        } finally {
+                                            SwingUtilities.invokeLater(() -> isLoadingState = false);
                                 }
                             },
                             error -> {
+                                        try {
+                                            isLoadingState = true; // Re-affirm
                                 LOG.error("Error loading last read book: " + error.getMessage(), error);
                                 Messages.showErrorDialog(project, "加载上次阅读书籍失败: " + error.getMessage(), "加载错误");
-                                selectAndHighlightFirstBook();
+                                            selectAndHighlightFirstBook(); // This will also manage isLoadingState
+                                        } finally {
+                                            SwingUtilities.invokeLater(() -> isLoadingState = false);
+                                        }
                             }
                     );
         } else {
             LOG.error("BookService is not initialized. Cannot select last read book.");
-        }
+                    selectAndHighlightFirstBook(); // Fallback, manages its own isLoadingState
+                }
+            } finally {
+                // This outer finally ensures isLoadingState is reset if the reactive call isn't made or fails synchronously.
+                // The reactive callbacks above will also reset it for their specific paths.
+                SwingUtilities.invokeLater(() -> isLoadingState = false);
+            }
+        });
     }
 
     /**
      * 选择并高亮第一本书 (如果列表不为空)
      */
     private void selectAndHighlightFirstBook() {
+        SwingUtilities.invokeLater(() -> { // Ensure on EDT
+            isLoadingState = true;
+            try {
         if (!booksListModel.isEmpty()) {
             selectedBook = booksListModel.getElementAt(0);
             booksList.setSelectedIndex(0);
             booksList.ensureIndexIsVisible(0);
             booksList.setSelectionBackground(SELECTION_BACKGROUND);
             booksList.setSelectionForeground(SELECTION_FOREGROUND);
+                    LOG.debug("[selectAndHighlightFirstBook] Directly calling loadChapters.");
             loadChapters(selectedBook);
+                } else {
+                    LOG.debug("Book list is empty, cannot select first book.");
         }
+            } finally {
+                SwingUtilities.invokeLater(() -> isLoadingState = false);
+            }
+        });
     }
 
     /**
@@ -420,86 +577,29 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
      * 加载章节内容
      */
     private void loadChapterContent(Book book, Chapter chapter) {
+        LOG.info("[LOAD_CONTENT_ENTRY] Called on thread: " + Thread.currentThread().getName() + ", isLoadingState: " + isLoadingState + ", Book: " + (book != null ? book.getTitle() : "null") + ", Chapter: " + (chapter != null ? chapter.title() : "null"), new Throwable("Call stack for loadChapterContent"));
         if (book == null || chapter == null) {
             contentTextArea.setText("请先选择书籍和章节。");
+            if (currentChapterDisplayLabel != null) { 
+                currentChapterDisplayLabel.setText(" "); 
+            }
+            this.selectedChapter = null; 
             return;
         }
 
-        // 获取当前的阅读模式设置
-        ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
-        boolean isNotificationMode = modeSettings != null && modeSettings.isNotificationMode();
+        this.selectedBook = book;
+        this.selectedChapter = chapter; 
 
-        LOG.info("[调试] 加载章节内容: 书籍=" + book.getTitle() + ", 章节=" + chapter.title() + ", 通知栏模式=" + isNotificationMode);
+        LOG.info("[调试] ReaderPanel: 即将调用 uiAdapter.loadChapterContent: 书籍=" + book.getTitle() + ", 章节=" + chapter.title());
 
-        if (isNotificationMode) {
-            // 如果是通知栏模式，则使用 NotificationService 显示章节内容
-            if (notificationService != null) {
-                LOG.info("[调试] 使用通知栏模式加载章节内容: 书籍=" + book.getTitle() + ", 章节=" + chapter.title());
-
-                // 首先获取章节内容
-                uiAdapter.getChapterContent(book, chapter.url())
-                    .subscribe(
-                        content -> {
-                            LOG.info("[调试] 获取章节内容成功，准备显示到通知栏: 内容长度=" + (content != null ? content.length() : 0));
-                            // 将内容显示到通知栏
-                            notificationService.showChapterContent(book, chapter.url(), content)
-                                .subscribe(
-                                    notification -> LOG.info("[调试] 通知栏显示章节内容成功"),
-                                    error -> LOG.error("[调试] 通知栏显示章节内容失败: " + error.getMessage(), error)
-                                );
-
-                            // 在通知栏模式下，不调用 saveInitialProgressForChapter 方法
-                            // 因为 NotificationServiceImpl 的 showChapterContent 方法会自己保存页码
-                            // 如果在这里调用 saveInitialProgressForChapter 方法，会导致页码被覆盖
-                            // saveInitialProgressForChapter(book, chapter);
-                        },
-                        error -> {
-                            LOG.error("[调试] 获取章节内容失败: " + error.getMessage(), error);
-                            notificationService.showError("加载失败", "无法加载章节内容: " + error.getMessage()).subscribe();
-                        }
-                    );
+        if (uiAdapter != null) {
+             uiAdapter.loadChapterContent(book, chapter, contentTextArea, loadingLabel, currentChapterDisplayLabel);
             } else {
-                LOG.error("[调试] NotificationService 为 null，无法显示通知");
+            LOG.error("uiAdapter is null in ReaderPanel.loadChapterContent. Cannot load chapter.");
+            contentTextArea.setText("错误: UI适配器未初始化。");
+            if (currentChapterDisplayLabel != null) {
+                currentChapterDisplayLabel.setText("UI适配器错误");
             }
-        } else {
-            // 如果是阅读器模式，则使用原有的加载逻辑
-            LOG.info("[调试] 使用阅读器模式加载章节内容: 书籍=" + book.getTitle() + ", 章节=" + chapter.title());
-
-            // 确保内容区域可见
-            contentTextArea.setVisible(true);
-            contentScrollPane.setVisible(true);
-
-            // 记录内容区域的大小和可见性状态
-            LOG.info("[调试] 内容区域状态: contentTextArea.isVisible=" + contentTextArea.isVisible() +
-                     ", contentScrollPane.isVisible=" + contentScrollPane.isVisible() +
-                     ", contentTextArea.size=" + contentTextArea.getSize() +
-                     ", contentScrollPane.size=" + contentScrollPane.getSize());
-
-            // uiAdapter handles async loading and updates contentTextArea
-            uiAdapter.loadChapterContent(book, chapter, contentTextArea, loadingLabel);
-
-            // Restore scroll position AFTER content is loaded (might need callback or delay)
-            // For simplicity, attempting immediate restore. A better approach would use a callback.
-            SwingUtilities.invokeLater(() -> {
-                // 确保内容区域可见并强制重绘UI
-                contentTextArea.setVisible(true);
-                contentScrollPane.setVisible(true);
-                contentTextArea.revalidate();
-                contentTextArea.repaint();
-                contentScrollPane.revalidate();
-                contentScrollPane.repaint();
-
-                restoreScrollPosition(book, chapter);
-                // Save progress after loading and scrolling
-                saveInitialProgressForChapter(book, chapter);
-
-                // 再次记录内容区域的大小和可见性状态
-                LOG.info("[调试] 内容加载后区域状态: contentTextArea.isVisible=" + contentTextArea.isVisible() +
-                         ", contentScrollPane.isVisible=" + contentScrollPane.isVisible() +
-                         ", contentTextArea.size=" + contentTextArea.getSize() +
-                         ", contentScrollPane.size=" + contentScrollPane.getSize() +
-                         ", contentTextArea.text.length=" + contentTextArea.getText().length());
-            });
         }
     }
 
@@ -552,35 +652,65 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
      */
     private void selectLastReadChapter() {
         SwingUtilities.invokeLater(() -> { // Ensure UI updates happen on EDT
+            isLoadingState = true;
+            try {
             if (selectedBook == null || chaptersListModel.isEmpty()) {
                 LOG.debug("Cannot select last read chapter: No book selected or chapter list is empty.");
+                    // If list is empty but book selected, maybe load its content if it's a single-chapter book (edge case)
+                    // or clear content area. For now, just return.
+                    if (selectedBook != null && chaptersListModel.isEmpty()) {
+                        LOG.debug("Chapter list is empty for selected book. Clearing content.");
+                        contentTextArea.setText("");
+                        if (currentChapterDisplayLabel != null) currentChapterDisplayLabel.setText(" ");
+                        this.selectedChapter = null;
+                    }
                 return;
             }
-            // Use progress data directly from the selectedBook object
+
             String lastReadChapterId = selectedBook.getLastReadChapterId();
+                Chapter chapterToLoad = null;
+                int chapterIndexToSelect = -1;
+
             if (lastReadChapterId != null && !lastReadChapterId.isEmpty()) {
                 for (int i = 0; i < chaptersListModel.getSize(); i++) {
                     Chapter chapter = chaptersListModel.getElementAt(i);
                     if (lastReadChapterId.equals(chapter.url())) {
+                            chapterToLoad = chapter;
+                            chapterIndexToSelect = i;
                         LOG.debug("Auto-selecting last read chapter: " + chapter.title());
-                        if (chaptersList.getSelectedIndex() != i) { // Avoid redundant selection/event firing
-                             chaptersList.setSelectedIndex(i);
+                            break;
                         }
-                        chaptersList.ensureIndexIsVisible(i);
-                        // Content loading should happen via the list selection listener or initial load logic
-                        // loadChapterContent(selectedBook, chapter); // Avoid potentially redundant load
-                        return;
                     }
+                    if (chapterToLoad == null) {
+                        LOG.warn("Last read chapter ID [" + lastReadChapterId + "] not found in the loaded chapter list for " + selectedBook.getTitle() + ". Selecting first.");
                 }
-                LOG.warn("Last read chapter ID [" + lastReadChapterId + "] not found in the loaded chapter list for " + selectedBook.getTitle());
             } else {
                 LOG.debug("No last read chapter ID found for " + selectedBook.getTitle() + ", selecting first chapter.");
             }
 
-            // Fallback: Select the first chapter if no last read chapter or not found
-            if (!chaptersListModel.isEmpty() && chaptersList.getSelectedIndex() == -1) { // Select only if nothing is selected
-                chaptersList.setSelectedIndex(0);
-                chaptersList.ensureIndexIsVisible(0);
+                // Fallback: Select the first chapter if no last read chapter or not found, and list is not empty
+                if (chapterToLoad == null && !chaptersListModel.isEmpty()) {
+                    chapterToLoad = chaptersListModel.getElementAt(0);
+                    chapterIndexToSelect = 0;
+                    LOG.debug("Selecting first chapter as fallback: " + chapterToLoad.title());
+                }
+
+                if (chapterToLoad != null) {
+                    selectedChapter = chapterToLoad; // Update internal state
+                    if (chaptersList.getSelectedIndex() != chapterIndexToSelect) {
+                        chaptersList.setSelectedIndex(chapterIndexToSelect);
+                    }
+                    chaptersList.ensureIndexIsVisible(chapterIndexToSelect);
+                    LOG.debug("[selectLastReadChapter] Directly calling loadChapterContent for: " + chapterToLoad.title());
+                    loadChapterContent(selectedBook, selectedChapter); // Direct call
+                } else {
+                     LOG.debug("No chapter could be selected (e.g. chapter list model is empty or became empty).");
+                     contentTextArea.setText(""); // Clear content if no chapter is selected
+                     if (currentChapterDisplayLabel != null) currentChapterDisplayLabel.setText(" ");
+                     this.selectedChapter = null;
+                }
+            } finally {
+                SwingUtilities.invokeLater(() -> isLoadingState = false);
             }
         });
     }
@@ -758,6 +888,27 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
             messageBusConnection.disconnect();
         }
 
+        // 从 PROJECT_PANELS 中移除自身
+        // 确保 project 仍然有效并且当前实例确实是存储在映射中的那个实例
+        // ReaderToolWindowFactory.PROJECT_PANELS.remove(project, this) 更安全，如果 ConcurrentMap 支持
+        // 或者先 get 再比较，然后 remove
+        if (project != null && !project.isDisposed()) { // 添加 !project.isDisposed() 检查
+            ReaderPanel panelInMap = ReaderToolWindowFactory.PROJECT_PANELS.get(project);
+            if (panelInMap == this) {
+                ReaderToolWindowFactory.PROJECT_PANELS.remove(project);
+                LOG.info("ReaderPanel removed from PROJECT_PANELS for project: " + project.getName());
+            } else if (panelInMap != null) {
+                LOG.warn("ReaderPanel in map for project " + project.getName() + " is different during dispose. Not removing.");
+            }
+        } else if (project != null && project.isDisposed()) {
+             LOG.info("Project " + project.getName() + " is already disposed. Skipping removal from PROJECT_PANELS, map should be cleared elsewhere or panel already removed.");
+             // At this point, if project is disposed, PROJECT_PANELS should ideally be empty for this project,
+             // or the removal might have happened via another mechanism if ReaderToolWindowFactory itself is disposed with the project.
+             // For safety, we can still attempt a remove if we are certain about the key's state.
+             // However, accessing project.getName() on a disposed project can be problematic.
+             // Let's assume that if project is disposed, other cleanup mechanisms should handle the map or it's already done.
+        }
+
         LOG.info("Finished disposing ReactiveReaderPanel resources.");
     }
 
@@ -857,19 +1008,10 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
      */
     public void triggerLoadLastReadState() {
         LOG.info("外部触发加载上次阅读状态...");
-        // The actual loading is handled by the callback uiAdapter.setOnBooksLoaded
-        // which calls selectAndHighlightLastReadBook. We just need to ensure
-        // loadBooks is called if it hasn't been already.
+        // isLoadingState will be managed by the methods called below (selectAndHighlightLastReadBook or loadBooks -> selectAndHighlightLastReadBook)
         if (booksListModel.isEmpty()) {
-            loadBooks(); // Ensure books are loaded if the panel was initialized but hidden
+            loadBooks(); 
         } else {
-             // If books are already loaded, the callback might have already run.
-             // Explicitly call selectAndHighlightLastReadBook again if needed,
-             // but be careful about re-triggering logic unnecessarily.
-             // For now, assume the initial loadBooks call and its callback handle this.
-             LOG.debug("书籍列表非空，假设上次阅读状态已通过回调加载。");
-             // We might still need to select the last read book if the initial selection failed
-             // or if the window was closed and reopened without full reinitialization.
              selectAndHighlightLastReadBook();
         }
     }
@@ -885,44 +1027,50 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
         LOG.info("外部请求选择书籍: " + bookToSelect.getTitle());
 
-        // 如果书籍列表为空，将书籍保存到待选择列表，等待书籍列表加载完成后再选择
+        SwingUtilities.invokeLater(() -> { // Ensure on EDT
+            isLoadingState = true;
+            try {
         if (booksListModel.isEmpty()) {
             LOG.info("书籍列表为空，将书籍 '" + bookToSelect.getTitle() + "' 保存到待选择列表");
             pendingBookToSelect = bookToSelect;
-            // 如果书籍列表为空，尝试加载书籍列表
-            loadBooks();
-            return;
+                    loadBooks(); // This will eventually call selectAndHighlightLastReadBook which manages isLoadingState
+                    return; // isLoadingState will be reset by the chain initiated by loadBooks
         }
 
         for (int i = 0; i < booksListModel.getSize(); i++) {
             if (booksListModel.getElementAt(i).equals(bookToSelect)) {
                 if (booksList.getSelectedIndex() == i) {
                     LOG.debug("书籍 '" + bookToSelect.getTitle() + "' 已被选中");
-                    // Even if selected, ensure chapters are loaded if needed
-                    if (chaptersListModel.isEmpty()) {
-                        loadChapters(bookToSelect);
+                            selectedBook = bookToSelect; // Ensure selectedBook is current instance
+                            if (chaptersListModel.isEmpty()) { // If chapters not loaded, load them
+                                LOG.debug("[selectBookAndLoadProgress] Selected book chapters empty, calling loadChapters.");
+                                loadChapters(selectedBook); // loadChapters -> selectLastReadChapter (manages isLoadingState & loads content)
+                            } else {
+                                // Chapters are loaded. If the current selectedChapter isn't from this book or needs re-evaluation:
+                                // This case implies the book is already selected, and chapters are present.
+                                // We might need to ensure the correct chapter is selected/loaded if it's a specific deep link.
+                                // For now, if book is already selected, assume chapter selection is handled or will be by other means.
                     }
                 } else {
                     LOG.debug("在索引 " + i + " 找到书籍，设置选中项");
-                    booksList.setSelectedIndex(i);
+                            selectedBook = booksListModel.getElementAt(i); // Ensure current instance
+                            booksList.setSelectedIndex(i); // Listener is skipped due to isLoadingState
                     booksList.ensureIndexIsVisible(i);
+                            LOG.debug("[selectBookAndLoadProgress] Directly calling loadChapters after selecting book.");
+                            loadChapters(selectedBook); // loadChapters -> selectLastReadChapter (manages isLoadingState & loads content)
                 }
-                // The list selection listener will handle loading chapters and progress.
-                return;
+                        return; // Exit after handling found book
             }
         }
 
-        // 如果在当前列表中未找到书籍，将其保存到待选择列表
-        LOG.warn("无法选择书籍：列表中未找到 '" + bookToSelect.getTitle() + "'");
+                LOG.warn("无法选择书籍：列表中未找到 '" + bookToSelect.getTitle() + "', setting as pending and reloading books.");
         pendingBookToSelect = bookToSelect;
+                loadBooks(); // This will eventually call selectAndHighlightLastReadBook
 
-        // 尝试重新加载书籍列表，可能书籍列表尚未完全加载
-        loadBooks();
-
-        // 显示通知，但不要过早放弃，因为书籍可能在加载完成后出现
-        if (notificationService != null) {
-            notificationService.showInfo("提示", "正在尝试加载书籍：" + bookToSelect.getTitle()).subscribe();
-        }
+            } finally {
+                SwingUtilities.invokeLater(() -> isLoadingState = false);
+            }
+        });
     }
 
     /**
@@ -939,50 +1087,127 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
         LOG.info("加载指定章节：书籍=" + book.getTitle() + ", 章节=" + chapter.title());
 
-        // 如果当前选中的书籍不是指定的书籍，先选择书籍
-        if (selectedBook == null || !selectedBook.equals(book)) {
-            // 保存当前进度
-            saveCurrentProgress().subscribe();
+        SwingUtilities.invokeLater(() -> { // Ensure on EDT
+            isLoadingState = true;
+            try {
+                // If the book is not currently selected, select it first.
+                // selectBookAndLoadProgress will handle setting selectedBook, isLoadingState,
+                // and triggering chapter load (which includes selecting chapter and loading content).
+                if (selectedBook == null || !selectedBook.getId().equals(book.getId())) {
+                    LOG.debug("[loadChapter] Book is different or null. Calling selectBookAndLoadProgress for: " + book.getTitle());
+                    // selectBookAndLoadProgress will handle the full selection and loading flow,
+                    // including setting selectedChapter implicitly if it's the last read one.
+                    // We need to ensure *this specific chapter* gets loaded.
+                    // A bit tricky. selectBookAndLoadProgress might load the *lastReadChapter* for 'book'.
+                    // We want to override that with 'chapter'.
 
-            // 选择书籍
-            selectBookAndLoadProgress(book);
+                    // Let selectBookAndLoadProgress select the book and its default/last-read chapter.
+                    // Then, we explicitly load the requested chapter if different.
+                    // This is complex because selectBookAndLoadProgress is async and has its own isLoadingState.
 
-            // 由于选择书籍是异步的，我们需要等待章节列表加载完成后再选择章节
-            // 这里我们使用一个简单的方法：直接加载章节内容
-            selectedBook = book;
-            selectedChapter = chapter;
+                    // Simpler approach:
+                    this.selectedBook = book; // Tentatively set
+                    this.selectedChapter = chapter; // Tentatively set
 
-            // 立即更新Book对象的lastReadChapterId，确保下次打开章节列表对话框时能够正确高亮显示当前选中的章节
-            book.updateReadingProgress(chapter.url(), 0, 1);
+                    // Find book in list and select it. This might trigger listeners if not for isLoadingState.
+                    boolean bookFound = false;
+                    for (int i = 0; i < booksListModel.getSize(); i++) {
+                        if (booksListModel.getElementAt(i).getId().equals(book.getId())) {
+                            if (booksList.getSelectedIndex() != i) {
+                                booksList.setSelectedIndex(i); // isLoadingState should prevent listener
+                            }
+                            booksList.ensureIndexIsVisible(i);
+                            bookFound = true;
+                            break;
+                        }
+                    }
+                    if (!bookFound) {
+                        LOG.warn("[loadChapter] Target book " + book.getTitle() + " not found in booksListModel. Attempting to add/load it.");
+                        // This scenario is complex: book not in list. Add it then select?
+                        // For now, assume book is in list for loadChapter to work simply.
+                        // Or rely on a mechanism that adds the book and then calls loadChapter.
+                        // Simplification: if book not in list, this specific call might not fully work as intended without more logic.
+                        // Let's proceed assuming it was found or will be handled by a prior add operation.
+                    }
+                     // Now that the book is selected (or we attempted to), refresh its chapter list and select the target chapter.
+                    chaptersListModel.clear(); // Clear old chapters
+                    List<Chapter> chaptersFromCache = book.getCachedChapters();
+                    if(chaptersFromCache != null && !chaptersFromCache.isEmpty()){
+                        for(Chapter chap : chaptersFromCache){
+                            chaptersListModel.addElement(chap);
+                        }
+                    } else {
+                        // If cache is empty, we might need to trigger a fetch for this book's chapters
+                        // This indicates a potentially missing call to loadChapters for the book first.
+                        // For simplicity, loadChapterContent will handle if chapter object is valid.
+                        LOG.warn("[loadChapter] Book " + book.getTitle() + " has no cached chapters when trying to load specific chapter " + chapter.title());
+                    }
 
-            loadChapterContent(book, chapter);
-
-            // 在章节列表中选择对应的章节
+                    // Select the specific chapter in the (potentially just refreshed) list
+                    boolean chapterFoundInList = false;
             for (int i = 0; i < chaptersListModel.getSize(); i++) {
-                if (chaptersListModel.getElementAt(i).equals(chapter)) {
+                        if (chaptersListModel.getElementAt(i).url().equals(chapter.url())) {
+                            chaptersList.setSelectedIndex(i); // isLoadingState should prevent listener
+                            chaptersList.ensureIndexIsVisible(i);
+                            chapterFoundInList = true;
+                            break;
+                        }
+                    }
+                    if (!chapterFoundInList && chaptersListModel.isEmpty() && chaptersFromCache != null && chaptersFromCache.contains(chapter)) {
+                        // If list was empty but cache had it (e.g. after clear/addAll above), and it should be there.
+                        // This case might occur if addAll isn't synchronous with getSize() or model updates. Unlikely with DefaultListModel.
+                        // More likely: Chapter object is valid, but list model isn't reflecting it yet.
+                        // Add it if it's not in the model but should be.
+                         LOG.debug("[loadChapter] Chapter "+chapter.title()+" not found in list model after refresh, but present in cache. Adding it.");
+                         chaptersListModel.addElement(chapter); // Add it if it was missing
+                         for (int i = 0; i < chaptersListModel.getSize(); i++) { // Try selecting again
+                            if (chaptersListModel.getElementAt(i).url().equals(chapter.url())) {
                     chaptersList.setSelectedIndex(i);
                     chaptersList.ensureIndexIsVisible(i);
+                                chapterFoundInList = true;
                     break;
                 }
             }
-        } else {
-            // 如果当前选中的书籍就是指定的书籍，直接选择章节
-            selectedChapter = chapter;
+                    }
+                     if (!chapterFoundInList) {
+                        LOG.warn("[loadChapter] Target chapter " + chapter.title() + " not found in chapterListModel for book " + book.getTitle());
+                        // Content will still be loaded if chapter object is valid. List selection might be off.
+                    }
 
-            // 立即更新Book对象的lastReadChapterId，确保下次打开章节列表对话框时能够正确高亮显示当前选中的章节
-            book.updateReadingProgress(chapter.url(), 0, 1);
-
-            loadChapterContent(book, chapter);
-
-            // 在章节列表中选择对应的章节
+                } else if (selectedChapter == null || !selectedChapter.url().equals(chapter.url())) {
+                    // Book is the same, but chapter is different or null
+                    this.selectedChapter = chapter;
+                    boolean chapterFoundInList = false;
             for (int i = 0; i < chaptersListModel.getSize(); i++) {
-                if (chaptersListModel.getElementAt(i).equals(chapter)) {
-                    chaptersList.setSelectedIndex(i);
+                        if (chaptersListModel.getElementAt(i).url().equals(chapter.url())) {
+                            if (chaptersList.getSelectedIndex() != i) {
+                                chaptersList.setSelectedIndex(i); // isLoadingState should prevent listener
+                            }
                     chaptersList.ensureIndexIsVisible(i);
+                            chapterFoundInList = true;
                     break;
                 }
             }
-        }
+                     if (!chapterFoundInList) {
+                        LOG.warn("[loadChapter] Target chapter " + chapter.title() + " not found in chapterListModel for current book " + book.getTitle());
+                    }
+                } else {
+                    // Book and chapter are already selected, likely a forced reload.
+                    LOG.debug("[loadChapter] Book and Chapter are already selected. Proceeding to load content for " + chapter.title());
+                }
+                
+                // Now, selectedBook and selectedChapter should be correctly set. Load the content.
+                LOG.debug("[loadChapter] Directly calling loadChapterContent for book: " + this.selectedBook.getTitle() + ", chapter: " + this.selectedChapter.title());
+                loadChapterContent(this.selectedBook, this.selectedChapter);
+                // Update book's progress to this chapter, position 0 as it's a new load.
+                // Page 1 because lastReadPage means current page being read.
+                this.selectedBook.updateReadingProgress(this.selectedChapter.url(), 0, 1);
+
+
+            } finally {
+                SwingUtilities.invokeLater(() -> isLoadingState = false);
+            }
+        });
     }
 
     // --- End Public API ---

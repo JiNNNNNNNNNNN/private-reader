@@ -204,17 +204,57 @@ public final class StorageAdapter {
     }
     
     /**
-     * 更新章节总数
+     * 更新书籍总章节数 (通过 BookRepository 实现)
      */
     public void updateTotalChapters(@NotNull Book book, int totalChapters) {
-        readingProgressRepository.updateTotalChapters(book, totalChapters);
+        // 总章节数是书籍的元数据，应通过 BookRepository 更新
+        if (book != null) {
+            book.setTotalChapters(totalChapters);
+            bookRepository.updateBook(book);
+            LOG.debug("StorageAdapter: updateTotalChapters for book '" + book.getTitle() + "' to " + totalChapters + " via BookRepository");
+        } else {
+            LOG.warn("StorageAdapter: updateTotalChapters called with null book.");
+        }
     }
     
     /**
-     * 更新当前章节索引
+     * 更新当前章节索引 (通过 updateProgress 实现)
      */
     public void updateCurrentChapter(@NotNull Book book, int currentChapterIndex) {
-        readingProgressRepository.updateCurrentChapter(book, currentChapterIndex);
+        // 当前章节索引是阅读进度的一部分，应通过 updateProgress 更新
+        if (book != null) {
+            java.util.List<com.lv.tool.privatereader.parser.NovelParser.Chapter> chapters = book.getCachedChapters();
+            String chapterId = null;
+            String chapterTitle = null;
+
+            if (chapters != null && currentChapterIndex >= 0 && currentChapterIndex < chapters.size()) {
+                com.lv.tool.privatereader.parser.NovelParser.Chapter currentChapter = chapters.get(currentChapterIndex);
+                if (currentChapter != null) {
+                    chapterId = currentChapter.url(); // url 作为 chapterId
+                    chapterTitle = currentChapter.title();
+                }
+            }
+
+            // 获取当前阅读位置和页码，如果章节信息无法获取，这些可能是书籍的最后记录或默认值
+            int position = book.getLastReadPosition();
+            int page = book.getLastReadPageOrDefault(1);
+
+            // 更新书本的当前章节索引和最后阅读章节信息，以保持 Book 对象状态的一致性
+            // 这些更改将通过下面的 updateProgress 最终持久化到数据库
+            book.setCurrentChapterIndex(currentChapterIndex); // 更新 Book 对象中的索引
+            if (chapterId != null) {
+                book.setLastReadChapterId(chapterId);
+            }
+            if (chapterTitle != null) {
+                book.setLastReadChapter(chapterTitle); // 更新 Book 对象中的章节标题
+            }
+
+            readingProgressRepository.updateProgress(book, chapterId, chapterTitle, position, page);
+            LOG.debug(String.format("StorageAdapter: updateCurrentChapter for book '%s' to index %d (ChapterID: %s, Title: '%s') via updateProgress",
+                    book.getTitle(), currentChapterIndex, chapterId, chapterTitle));
+        } else {
+            LOG.warn("StorageAdapter: updateCurrentChapter called with null book.");
+        }
     }
     
     /**

@@ -8,6 +8,8 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -99,11 +101,11 @@ public class NetworkUtils {
     public static long checkNetworkSpeed(String url) {
         try {
             long start = System.currentTimeMillis();
-            URLConnection connection = new URL(url).openConnection();
+            URLConnection connection = new URI(url).toURL().openConnection();
             connection.setConnectTimeout(TIMEOUT);
             connection.connect();
             return System.currentTimeMillis() - start;
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             return -1;
         }
     }
@@ -153,7 +155,7 @@ public class NetworkUtils {
     public static boolean isUrlAccessible(String urlString, int timeoutMs) {
         LOG.debug("测试URL可访问性: " + urlString);
         try {
-            URL url = new URL(urlString);
+            URL url = new URI(urlString).toURL();
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(timeoutMs);
             connection.setReadTimeout(timeoutMs);
@@ -161,7 +163,7 @@ public class NetworkUtils {
             int responseCode = connection.getResponseCode();
             LOG.debug("URL访问结果: " + urlString + ", 响应码: " + responseCode);
             return (responseCode >= 200 && responseCode < 400);
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             LOG.debug("URL访问失败: " + urlString + ", 错误: " + e.getMessage());
             return false;
         }

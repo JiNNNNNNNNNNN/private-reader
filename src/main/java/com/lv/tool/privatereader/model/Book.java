@@ -281,7 +281,17 @@ public class Book {
     }
 
     public void setLastReadPage(int lastReadPage) {
-        this.lastReadPage = lastReadPage;
+        int originalValue = this.lastReadPage;
+        if (lastReadPage > 0) { // 确保页码大于0
+            this.lastReadPage = lastReadPage;
+        } else {
+            // 如果传入的页码无效（例如0或负数），则将其设置为1
+            this.lastReadPage = 1;
+            com.intellij.openapi.diagnostic.Logger.getInstance(Book.class).warn("[Book.setLastReadPage] Invalid page number passed: " + lastReadPage + ". Defaulting to 1. Original value was: " + originalValue);
+        }
+        if (originalValue != this.lastReadPage) {
+             com.intellij.openapi.diagnostic.Logger.getInstance(Book.class).info("[Book.setLastReadPage] lastReadPage changed from " + originalValue + " to " + this.lastReadPage + " (input was " + lastReadPage + ")");
+        }
     }
 
     /**

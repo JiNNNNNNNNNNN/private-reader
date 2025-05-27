@@ -80,8 +80,6 @@ public final class DatabaseManager implements Disposable {
         LOG.info("DatabaseManager initialized. DB URL: " + dbUrl);
         // Ensure database directory and table are initialized on startup
         ensureDatabaseInitialized();
-        // Run migration after basic initialization
-        runMigrationIfNeeded();
     }
 
     public static DatabaseManager getInstance() {

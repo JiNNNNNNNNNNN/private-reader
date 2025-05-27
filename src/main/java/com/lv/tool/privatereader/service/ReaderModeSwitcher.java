@@ -149,22 +149,12 @@ public final class ReaderModeSwitcher implements ReaderModeSettingsListener, Dis
                      null, // onSuccess
                      error -> LOG.error("Error showing notification info", error)
                  );
-
-                 // 根据设置启用自动翻页
-                 if (notificationReaderSettings != null && notificationReaderSettings.isAutoRead()) {
-                     int interval = notificationReaderSettings.getReadIntervalSeconds();
-                     LOG.info("Enabling auto-read with interval: " + interval + " seconds");
-                     notificationService.startAutoRead(interval);
-                 }
              } else {
                  LOG.error("NotificationService is null, cannot show notification mode info.");
              }
          } else {
              // Switch back to Panel mode
              if (notificationService != null) {
-                 // 停止自动翻页
-                 notificationService.stopAutoRead();
-
                  // 直接调用同步方法，不需要 subscribe
                  notificationService.closeAllNotifications();
                  LOG.info("Requested closing all notifications for project: " + project.getName());

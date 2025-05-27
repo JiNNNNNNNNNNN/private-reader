@@ -24,14 +24,15 @@ import reactor.core.publisher.Mono;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.impl.SqliteReadingProgressRepository;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
+import com.intellij.openapi.Disposable;
+import com.intellij.util.messages.MessageBusConnection;
+import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
+import com.lv.tool.privatereader.settings.ReaderModeSettings;
+import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 
 /**
  * NotificationService 实现类
@@ -43,11 +44,12 @@ import com.lv.tool.privatereader.settings.NotificationReaderSettings;
  * 4. 我们应该直接使用 SqliteReadingProgressRepository 类的 updateProgress 方法的重载版本，直接传递页码参数
  */
 @Service
-public final class NotificationServiceImpl implements NotificationService {
+public final class NotificationServiceImpl implements NotificationService, Disposable {
     private static final Logger LOG = Logger.getInstance(NotificationServiceImpl.class);
     private static final String NOTIFICATION_GROUP_ID = "PrivateReader";
     // 通知相关字段
     private final AtomicReference<Notification> currentNotificationRef = new AtomicReference<>(null);
+    private MessageBusConnection messageBusConnection;
 
     // 服务相关字段
     private BookService bookService;
@@ -63,10 +65,6 @@ public final class NotificationServiceImpl implements NotificationService {
     private String currentChapterId;
     private String currentChapterTitle;
 
-    // 自动翻页相关字段
-    private ScheduledExecutorService autoReadExecutor;
-    private ScheduledFuture<?> autoReadTask;
-
     /**
      * 无参构造方法
      */
@@ -74,6 +72,13 @@ public final class NotificationServiceImpl implements NotificationService {
         LOG.debug("初始化 NotificationServiceImpl");
         this.reactiveSchedulers = ReactiveSchedulers.getInstance();
         // 其他服务会在首次使用时延迟初始化
+        this.messageBusConnection = ApplicationManager.getApplication().getMessageBus().connect(this);
+        this.messageBusConnection.subscribe(CurrentChapterNotifier.TOPIC, new CurrentChapterNotifier() {
+            @Override
+            public void currentChapterChanged(Book changedBook, NovelParser.Chapter newChapter) {
+                handleChapterChangedEvent(changedBook, newChapter);
+            }
+        });
     }
 
     /**
@@ -344,28 +349,6 @@ public final class NotificationServiceImpl implements NotificationService {
                 navigateChapter(project, 1);
             }));
 
-            // 3. 添加自动阅读按钮（如果设置允许）
-            if (notificationSettings != null && notificationSettings.isAutoRead()) {
-                boolean isAutoReadActive = autoReadTask != null && !autoReadTask.isDone();
-
-                if (isAutoReadActive) {
-                    notification.addAction(NotificationAction.createSimple("暂停自动阅读", () -> {
-                        LOG.debug("[通知栏模式] 点击了暂停自动阅读按钮");
-                        stopAutoRead();
-                        // 刷新通知以更新按钮状态
-                        showCurrentPageInternal(project, title, content);
-                    }));
-                } else {
-                    notification.addAction(NotificationAction.createSimple("开始自动阅读", () -> {
-                        LOG.debug("[通知栏模式] 点击了开始自动阅读按钮");
-                        int interval = notificationSettings.getReadIntervalSeconds();
-                        startAutoRead(interval);
-                        // 刷新通知以更新按钮状态
-                        showCurrentPageInternal(project, title, content);
-                    }));
-                }
-            }
-
             // 4. 添加返回阅读器模式按钮
             notification.addAction(NotificationAction.createSimple("返回阅读器", () -> {
                 LOG.debug("[通知栏模式] 点击了返回阅读器按钮");
@@ -401,6 +384,11 @@ public final class NotificationServiceImpl implements NotificationService {
 
         Notification existingNotification = currentNotificationRef.get();
         if (existingNotification != null && !existingNotification.isExpired()) {
+            String oldContent = existingNotification.getContent(); // Get current content from notification
+            if (content.equals(oldContent)) {
+                LOG.debug("[通知栏模式] 更新内容与当前通知内容相同 (传入长度: " + content.length() + ",现有长度: " + (oldContent != null ? oldContent.length() : "null") + ")，跳过重新通知");
+                return; // Content is the same, do not re-notify
+            }
             // Assuming the content parameter here is the *full* content to display for the current page
             // This method is called by the refresh timer, which rebuilds the content string
             existingNotification.setContent(content);
@@ -408,7 +396,7 @@ public final class NotificationServiceImpl implements NotificationService {
             existingNotification.notify(project);
 
             // 记录日志
-            LOG.debug("[通知栏模式] 更新通知内容成功");
+            LOG.debug("[通知栏模式] 更新通知内容成功 (内容已变更)");
         } else {
             LOG.warn("没有现有通知可更新或通知已过期");
         }
@@ -750,6 +738,15 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 触发章节预加载
         triggerChapterPreload(currentBook, targetIndex);
+
+        // 发布章节变更事件
+        try {
+            NovelParser.Chapter newChapterEventData = new NovelParser.Chapter(targetChapter.title(), targetChapter.url());
+            ApplicationManager.getApplication().getMessageBus().syncPublisher(CurrentChapterNotifier.TOPIC).currentChapterChanged(this.currentBook, newChapterEventData);
+            LOG.info("[通知栏模式] 已发布章节变更事件: " + targetChapter.title());
+        } catch (Exception e) {
+            LOG.error("[通知栏模式] 发布章节变更事件时出错: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -786,7 +783,7 @@ public final class NotificationServiceImpl implements NotificationService {
         int targetIndex = currentIndex + direction;
         if (targetIndex < 0 || targetIndex >= cachedChapters.size()) {
             String message = direction < 0 ? "已经是第一章了" : "已经是最后一章了";
-            LOG.warn(message);
+            LOG.warn("[通知栏模式] " + message);
             showInfo("导航", message);
             return;
         }
@@ -825,15 +822,17 @@ public final class NotificationServiceImpl implements NotificationService {
                 // 更新当前章节信息
                 currentChapterId = targetChapterId;
                 currentChapterTitle = targetChapterTitle;
-                setCurrentChapterContent(content); // 分页并设置当前页面
-                currentPageIndex = 0; // 从第一页开始
 
-                // 显示第一页内容
+                // 分页并设置为第一页
+                setCurrentChapterContent(content);
                 if (currentPages.isEmpty()) {
-                    LOG.warn("分页后内容为空，无法显示通知: " + targetChapterId);
+                    LOG.warn("[通知栏模式] 分页后内容为空，无法显示通知: " + targetChapterId);
                     showError("显示章节失败", "分页后内容为空");
                     return;
                 }
+
+                // 设置为第一页
+                currentPageIndex = 0;
 
                 // 构建通知标题和内容
                 String title = currentBook.getTitle() + " - " + targetChapterTitle;
@@ -860,6 +859,15 @@ public final class NotificationServiceImpl implements NotificationService {
 
                 // 触发章节预加载
                 triggerChapterPreload(currentBook, targetIndex);
+
+                // 发布章节变更事件
+                try {
+                    // targetChapter is already NovelParser.Chapter type
+                    ApplicationManager.getApplication().getMessageBus().syncPublisher(CurrentChapterNotifier.TOPIC).currentChapterChanged(this.currentBook, targetChapter);
+                    LOG.info("[通知栏模式] 已发布章节变更事件 (cached): " + targetChapter.title());
+                } catch (Exception e) {
+                    LOG.error("[通知栏模式] 发布章节变更事件时出错 (cached): " + e.getMessage(), e);
+                }
             });
         });
     }
@@ -1038,108 +1046,35 @@ public final class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public void startAutoRead(int intervalSeconds) {
-        // 先停止现有的自动阅读任务
-        stopAutoRead();
-
-        // 验证参数和状态
-        if (intervalSeconds <= 0) {
-            LOG.warn("[通知栏模式] 自动阅读间隔必须大于0秒，使用默认值5秒");
-            intervalSeconds = 5; // 使用默认值
+    public void dispose() {
+        LOG.debug("Disposing NotificationServiceImpl");
+        // stopAutoRead(); // Call was already removed
+        closeCurrentNotificationInternal(); // 确保关闭当前通知
+        if (this.messageBusConnection != null) {
+            this.messageBusConnection.disconnect();
+            this.messageBusConnection = null;
+            LOG.debug("MessageBus connection disconnected.");
         }
+        // Temporarily removing chapterPreloader dispose due to linter error. Will investigate its lifecycle later.
 
-        if (currentBook == null || currentChapterId == null || currentPages.isEmpty()) {
-            LOG.warn("[通知栏模式] 当前没有正在阅读的内容，无法启动自动阅读");
+        // 尝试保存通知模式的阅读进度
+        ReaderModeSettings currentReaderModeSettings = null;
+        try {
+            currentReaderModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        } catch (Exception e) {
+            LOG.error("Failed to get ReaderModeSettings service in dispose", e);
+            // 如果无法获取服务，则不执行后续操作
             return;
         }
 
-        LOG.info("[通知栏模式] 启动自动翻页，间隔: " + intervalSeconds + " 秒");
-
-        // 创建守护线程执行器
-        autoReadExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "AutoReadThread");
-            thread.setDaemon(true); // 设置为守护线程，不会阻止 JVM 退出
-            return thread;
-        });
-
-        // 获取当前项目，用于通知显示
-        final Project currentProject = com.intellij.openapi.project.ProjectManager.getInstance().getOpenProjects().length > 0 ?
-                com.intellij.openapi.project.ProjectManager.getInstance().getOpenProjects()[0] : null;
-
-        // 调度定期任务
-        autoReadTask = autoReadExecutor.scheduleAtFixedRate(() -> {
-            try {
-                if (currentBook != null && currentChapterId != null && currentChapterTitle != null) {
-                    if (currentPageIndex < currentPages.size() - 1) {
-                        // 如果还有下一页，显示下一页
-                        LOG.info("[通知栏模式] 自动阅读：显示下一页");
-                        showNextPage(currentProject);
-                    } else {
-                        // 如果已经是最后一页，尝试加载下一章
-                        LOG.info("[通知栏模式] 自动阅读：显示下一章");
-                        navigateChapter(currentProject, 1);
-                    }
-                } else {
-                    LOG.warn("[通知栏模式] 自动阅读：当前没有正在阅读的内容，停止自动阅读");
-                    stopAutoRead();
-                }
-            } catch (Exception e) {
-                LOG.error("[通知栏模式] 自动翻页时出错: " + e.getMessage(), e);
-                // 出错时不停止自动阅读，让它继续尝试
-            }
-        }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
-
-        LOG.info("[通知栏模式] 自动阅读已启动，间隔: " + intervalSeconds + " 秒");
-    }
-
-    @Override
-    public void stopAutoRead() {
-        LOG.info("[通知栏模式] 停止自动翻页");
-
-        // 取消定时任务
-        if (autoReadTask != null && !autoReadTask.isDone()) {
-            try {
-                autoReadTask.cancel(false); // 尝试优雅地取消，不中断正在执行的任务
-                LOG.info("[通知栏模式] 自动阅读任务已取消");
-            } catch (Exception e) {
-                LOG.error("[通知栏模式] 取消自动阅读任务时出错: " + e.getMessage(), e);
-            } finally {
-                autoReadTask = null;
-            }
+        if (currentReaderModeSettings != null && currentReaderModeSettings.isNotificationMode()) {
+            LOG.info("[Dispose] Current NotificationServiceImpl state: currentPageIndex = " + this.currentPageIndex + ", currentPages.size() = " + (this.currentPages != null ? this.currentPages.size() : "null")); // ADDED LOG
+            LOG.info("Currently in notification mode, attempting to save progress before disposing.");
+            saveNotificationModeProgress();
+        } else {
+            LOG.info("Not in notification mode or ReaderModeSettings is null, no progress to save from notification bar.");
         }
-
-        // 关闭执行器
-        if (autoReadExecutor != null && !autoReadExecutor.isShutdown()) {
-            try {
-                autoReadExecutor.shutdown(); // 优雅关闭，允许已提交的任务完成
-                // 等待一小段时间让任务完成
-                if (!autoReadExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
-                    // 如果超时，强制关闭
-                    autoReadExecutor.shutdownNow();
-                    LOG.info("[通知栏模式] 自动阅读执行器已强制关闭");
-                } else {
-                    LOG.info("[通知栏模式] 自动阅读执行器已优雅关闭");
-                }
-            } catch (InterruptedException e) {
-                // 如果等待被中断，强制关闭
-                autoReadExecutor.shutdownNow();
-                LOG.warn("[通知栏模式] 关闭自动阅读执行器时被中断，已强制关闭");
-                // 恢复中断状态
-                Thread.currentThread().interrupt();
-            } catch (Exception e) {
-                LOG.error("[通知栏模式] 关闭自动阅读执行器时出错: " + e.getMessage(), e);
-                // 确保执行器被关闭
-                try {
-                    autoReadExecutor.shutdownNow();
-                } catch (Exception ignored) {
-                    // 忽略进一步的异常
-                }
-            } finally {
-                autoReadExecutor = null;
-            }
-        }
-
-        LOG.info("[通知栏模式] 自动阅读已停止");
+        LOG.debug("NotificationServiceImpl disposed.");
     }
 
     /**
@@ -1444,6 +1379,15 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 触发章节预加载
         triggerChapterPreload(currentBook, targetIndex);
+
+        // 发布章节变更事件
+        try {
+            NovelParser.Chapter newChapterEventData = new NovelParser.Chapter(targetChapter.title(), targetChapter.url());
+            ApplicationManager.getApplication().getMessageBus().syncPublisher(CurrentChapterNotifier.TOPIC).currentChapterChanged(this.currentBook, newChapterEventData);
+            LOG.info("[通知栏模式] 已发布章节变更事件 (to last page): " + targetChapter.title());
+        } catch (Exception e) {
+            LOG.error("[通知栏模式] 发布章节变更事件时出错 (to last page): " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -1506,7 +1450,7 @@ public final class NotificationServiceImpl implements NotificationService {
         .subscribeOn(reactiveSchedulers.io()) // 在IO线程上执行
         .timeout(java.time.Duration.ofSeconds(30)) // 设置超时
         .doOnError(e -> {
-            LOG.error("[通知栏模式] 获取章节内容时出错: " + e.getMessage(), e);
+            LOG.error("获取章节内容时出错: " + e.getMessage(), e);
             reactiveSchedulers.runOnUI(() -> showError("导航失败", "获取章节内容时出错: " + e.getMessage()));
         })
         .subscribe(content -> {
@@ -1558,6 +1502,15 @@ public final class NotificationServiceImpl implements NotificationService {
 
                 // 触发章节预加载
                 triggerChapterPreload(currentBook, targetIndex);
+
+                // 发布章节变更事件
+                try {
+                    // targetChapter is already NovelParser.Chapter type
+                    ApplicationManager.getApplication().getMessageBus().syncPublisher(CurrentChapterNotifier.TOPIC).currentChapterChanged(this.currentBook, targetChapter);
+                    LOG.info("[通知栏模式] 已发布章节变更事件 (cached, to last page): " + targetChapter.title());
+                } catch (Exception e) {
+                    LOG.error("[通知栏模式] 发布章节变更事件时出错 (cached, to last page): " + e.getMessage(), e);
+                }
             });
         });
     }
@@ -1644,5 +1597,130 @@ public final class NotificationServiceImpl implements NotificationService {
 
         // 使用 ReactiveChapterPreloader 预加载前后章节
         chapterPreloader.preloadChapters(book, chapterIndex);
+    }
+
+    private void handleChapterChangedEvent(Book changedBook, NovelParser.Chapter newChapter) {
+        LOG.debug("[事件处理] 接收到章节变更事件: 书籍={}, 新章节={}", changedBook.getTitle(), newChapter.title());
+        ensureServicesInitialized(); // 确保所有依赖的服务都已初始化
+
+        ReaderModeSettings readerModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        if (readerModeSettings == null || !readerModeSettings.isNotificationMode()) {
+            LOG.debug("[事件处理] 非通知栏模式，忽略章节变更事件。");
+            return;
+        }
+
+        Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+        if (openProjects.length == 0) {
+            LOG.warn("[事件处理] 没有打开的项目，无法处理章节变更事件并更新通知。");
+            return;
+        }
+        Project project = openProjects[0]; // 默认使用第一个打开的项目
+        if (openProjects.length > 1) {
+            LOG.warn("[事件处理] 有多个项目打开，将使用第一个项目: " + project.getName() + " 来更新通知。");
+        }
+
+        // 检查书籍或章节是否真的改变了
+        if (this.currentBook != null && this.currentBook.equals(changedBook) && 
+            this.currentChapterId != null && this.currentChapterId.equals(newChapter.url())) {
+            LOG.debug("[事件处理] 书籍和章节未发生变化，无需更新通知。");
+            return;
+        }
+
+        LOG.info("[事件处理] 检测到章节变更 (之前: 书籍='" + (this.currentBook != null ? this.currentBook.getTitle() : "无") + 
+                 "', 章节ID='" + (this.currentChapterId != null ? this.currentChapterId : "无") + 
+                 "'; 现在: 书籍='" + changedBook.getTitle() + 
+                 "', 章节='" + newChapter.title() + "'), 准备在通知栏模式下更新显示。");
+
+        // 获取新章节内容 - 改为异步获取
+        Mono.fromCallable(() -> chapterService.getChapterContent(changedBook.getId(), newChapter.url()))
+            .subscribeOn(reactiveSchedulers.io()) // 在IO线程执行耗时操作
+            .publishOn(reactiveSchedulers.ui()) // 确保UI更新在UI线程
+            .subscribe(
+                content -> {
+                    try { // Add try block here
+                        if (content != null && !content.isEmpty()) {
+                            LOG.debug("[事件处理] 成功获取新章节 '" + newChapter.title() + "' 的内容，准备更新通知。");
+                            this.currentBook = changedBook;
+                            this.currentChapterId = newChapter.url();
+                            // 尝试从 chapterService 获取标题，如果失败则使用 newChapter.title()
+                            try {
+                                String fetchedTitle = chapterService.getChapterTitle(changedBook.getId(), newChapter.url());
+                                this.currentChapterTitle = (fetchedTitle != null && !fetchedTitle.isEmpty()) ? fetchedTitle : newChapter.title();
+                            } catch (Exception e) {
+                                LOG.warn("[事件处理] 获取章节标题失败，使用 newChapter.title(): " + e.getMessage(), e);
+                                this.currentChapterTitle = newChapter.title();
+                            }
+
+                            setCurrentChapterContent(content); // 分页
+                            if (this.currentPages.isEmpty()) {
+                                LOG.warn("[事件处理] 新章节 '" + newChapter.title() + "' 分页后内容为空，无法显示通知。");
+                                showError("章节内容为空", "无法在通知栏显示章节 " + newChapter.title());
+                                return;
+                            }
+                            // 总是显示第一页
+                            this.currentPageIndex = 0;
+                            String pageContentToShow = this.currentPages.get(this.currentPageIndex);
+                            String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
+                                 "进度: 第 " + (this.currentPageIndex + 1) + " 页，共 " + this.currentPages.size() + " 页" : "";
+                            String notificationContent = pageContentToShow + (progressText.isEmpty() ? "" : "\n\n" + progressText);
+
+                            showCurrentPageInternal(project, this.currentChapterTitle, notificationContent);
+                            LOG.info("[事件处理] 通知栏已更新到新章节 '" + newChapter.title() + "' 的第一页。");
+                            saveNotificationModeProgress(); // Save progress after successfully showing the new chapter/page
+                        } else {
+                            LOG.warn("[事件处理] 获取到的新章节 '" + newChapter.title() + "' 内容为空，不更新通知。");
+                            showError("章节内容为空", "无法获取章节 " + newChapter.title() + " 的内容。");
+                        }
+                    } catch (Throwable t) { // Add catch block here
+                        LOG.error("[事件处理] 在 onNext 中发生未捕获的错误: " + t.getMessage(), t);
+                    }
+                },
+                error -> {
+                    LOG.error("[事件处理] 获取新章节 '" + newChapter.title() + "' 内容失败: " + error.getMessage(), error);
+                    showError("加载章节失败", "无法加载章节 " + newChapter.title() + " 的内容: " + error.getMessage());
+                }
+            );
+    }
+
+    // Placed before handleChapterChangedEvent for logical grouping.
+    private void saveNotificationModeProgress() {
+        LOG.info("[进度保存] 开始保存通知栏模式阅读进度. Initial currentPageIndex: " + this.currentPageIndex); // CHANGED LOG LEVEL to info
+        try {
+            ensureServicesInitialized(); 
+
+            if (this.currentBook == null || this.currentChapterId == null || this.currentChapterTitle == null) {
+                LOG.warn("[进度保存] 无法保存通知栏模式进度：当前书籍、章节ID或章节标题为空。");
+                return;
+            }
+
+            BookService bookServiceInstance = ApplicationManager.getApplication().getService(BookService.class);
+            if (bookServiceInstance == null) {
+                LOG.error("[进度保存] BookService 服务未找到，无法保存进度。");
+                return;
+            }
+            
+            // Ensure the Book object has the correct page number set before saving
+            // Notification mode uses page indexing, BookService might rely on this field when saving.
+            int pageToSave = this.currentPageIndex + 1; // page is 1-based
+            this.currentBook.setLastReadPage(pageToSave);
+            // Position is 0 as we don't have fine-grained scroll position in notification mode.
+            // BookService.saveReadingProgress will use book.getLastReadPageOrDefault() which we just set.
+
+            LOG.debug("[进度保存] 调用 BookService.saveReadingProgress: Book=" + this.currentBook.getTitle() + 
+                      ", ChapterId=" + this.currentChapterId + 
+                      ", ChapterTitle=" + this.currentChapterTitle + 
+                      ", Page=" + pageToSave + " (Position=0)");
+
+            bookServiceInstance.saveReadingProgress(this.currentBook, this.currentChapterId, this.currentChapterTitle, this.currentPageIndex)
+                .subscribe(
+                    null, // onComplete (Void)
+                    error -> LOG.error("[进度保存] BookService.saveReadingProgress 异步保存通知栏模式阅读进度失败。", error),
+                    () -> LOG.info("[进度保存] BookService.saveReadingProgress 成功异步保存通知栏模式阅读进度：书籍=\'" +
+                                   this.currentBook.getTitle() + "\', 章节=\'" + this.currentChapterTitle + "\', 页码=" + pageToSave)
+                );
+
+        } catch (Exception e) {
+            LOG.error("[进度保存] 保存通知栏模式阅读进度时发生意外错误。", e);
+        }
     }
 }

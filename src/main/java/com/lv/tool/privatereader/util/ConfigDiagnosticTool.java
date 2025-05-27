@@ -385,8 +385,6 @@ public class ConfigDiagnosticTool {
             // 获取通知栏设置值
             Map<String, Object> notificationSettingsValues = new HashMap<>();
             notificationSettingsValues.put("pageSize", notificationSettings.getPageSize());
-            notificationSettingsValues.put("autoRead", notificationSettings.isAutoRead());
-            notificationSettingsValues.put("readIntervalSeconds", notificationSettings.getReadIntervalSeconds());
             notificationSettingsValues.put("showPageNumber", notificationSettings.isShowPageNumber());
 
             result.put("notificationSettings", notificationSettingsValues);

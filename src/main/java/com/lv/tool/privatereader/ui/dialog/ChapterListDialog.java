@@ -1,5 +1,6 @@
 package com.lv.tool.privatereader.ui.dialog;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.ui.components.JBList;
@@ -13,6 +14,11 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.intellij.openapi.ui.Messages;
+import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
+import com.intellij.util.messages.MessageBusConnection;
+import javax.swing.SwingUtilities;
+import javax.swing.DefaultListModel;
+import javax.swing.ListModel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -32,12 +38,11 @@ public class ChapterListDialog extends DialogWrapper {
     private static final Logger LOG = LoggerFactory.getLogger(ChapterListDialog.class);
 
     public ChapterListDialog(Project project, Book book) {
-        super(project);
+        super(project, true);
         this.project = project;
         this.book = book;
         this.chapterList = new JBList<>();
 
-        // 从ApplicationManager获取ChapterService（应用级别服务）
         this.chapterService = com.intellij.openapi.application.ApplicationManager.getApplication()
             .getService(com.lv.tool.privatereader.service.ChapterService.class);
 
@@ -65,6 +70,61 @@ public class ChapterListDialog extends DialogWrapper {
         init();
         setTitle("章节列表 - " + book.getTitle());
         setSize(500, 600);
+
+        // 订阅章节变更事件
+        MessageBusConnection connection = ApplicationManager.getApplication().getMessageBus().connect(getDisposable());
+        connection.subscribe(CurrentChapterNotifier.TOPIC, new CurrentChapterNotifier() {
+            @Override
+            public void currentChapterChanged(Book changedBook, NovelParser.Chapter newChapter) {
+                SwingUtilities.invokeLater(() -> {
+                    if (ChapterListDialog.this.book.equals(changedBook)) {
+                        LOG.debug("ChapterListDialog received currentChapterChanged event for book: " + changedBook.getTitle() + ", new chapter: " + newChapter.title() + " (URL: " + newChapter.url() + ")");
+                        
+                        boolean found = findAndSelectChapter(newChapter.url());
+
+                        if (!found) {
+                            LOG.debug("Chapter not found in current list model. Refreshing from book.getCachedChapters() and retrying.");
+                            List<NovelParser.Chapter> currentCachedChapters = ChapterListDialog.this.book.getCachedChapters();
+                            if (currentCachedChapters != null && !currentCachedChapters.isEmpty()) {
+                                // 保存当前选中的索引，以便刷新后尽量恢复视图
+                                int previouslySelectedIndex = chapterList.getSelectedIndex();
+
+                                chapterList.setListData(currentCachedChapters.toArray(new NovelParser.Chapter[0]));
+                                LOG.debug("ChapterListDialog model refreshed with " + currentCachedChapters.size() + " chapters from book's cache.");
+                                
+                                found = findAndSelectChapter(newChapter.url());
+                                
+                                if (!found && previouslySelectedIndex != -1 && previouslySelectedIndex < chapterList.getModel().getSize()) {
+                                    // 如果新章节仍未找到，但之前有选中项，则尝试恢复之前的选中，避免列表跳到不相关的开头
+                                    chapterList.setSelectedIndex(previouslySelectedIndex);
+                                    chapterList.ensureIndexIsVisible(previouslySelectedIndex);
+                                }
+                            } else {
+                                LOG.debug("book.getCachedChapters() is null or empty. Cannot refresh model.");
+                            }
+                        }
+                        if (found) {
+                             LOG.debug("ChapterListDialog successfully updated selection to: " + newChapter.title());
+                        } else {
+                             LOG.warn("ChapterListDialog could not select new chapter even after potential refresh: " + newChapter.title() + " (URL: " + newChapter.url() + ")");
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    // Helper method to avoid code duplication
+    private boolean findAndSelectChapter(String chapterUrl) {
+        ListModel<NovelParser.Chapter> model = chapterList.getModel();
+        for (int i = 0; i < model.getSize(); i++) {
+            if (model.getElementAt(i).url().equals(chapterUrl)) {
+                chapterList.setSelectedIndex(i);
+                chapterList.ensureIndexIsVisible(i);
+                return true; // Found and selected
+            }
+        }
+        return false; // Not found
     }
 
     @Override

@@ -273,7 +273,6 @@ public final class FileBookRepository implements BookRepository {
                                className.contains("com.jetbrains.");
                     }
                 })
-                .setLenient() // 允许宽松解析
                 .serializeNulls() // 序列化 null 值
                 .create();
     }
@@ -1030,10 +1029,6 @@ public final class FileBookRepository implements BookRepository {
             }
         }
     }
-
-
-
-
 
     /**
      * 更新书籍索引
