@@ -1083,6 +1083,7 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                     break;
                 }
             }
+        
         }
         
         currentChapterDisplayLabel.setText(state.getCurrentChapterTitle());

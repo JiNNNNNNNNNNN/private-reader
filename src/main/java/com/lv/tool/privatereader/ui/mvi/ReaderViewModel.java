@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import io.reactivex.rxjava3.core.Single;
+import kotlin.Pair;
 
 
 public class ReaderViewModel implements Disposable {
@@ -59,7 +60,7 @@ public class ReaderViewModel implements Disposable {
         if (intent instanceof IReaderIntent.LoadInitialData) {
             loadInitialData();
         } else if (intent instanceof IReaderIntent.SelectBook selectBook) {
-            loadChaptersForBook(selectBook.bookId());
+            loadChaptersForBook(selectBook.bookId(), null);
         } else if (intent instanceof IReaderIntent.SelectChapter selectChapter) {
             Book currentBook = findBookInCurrentState(uiState.getValue().getSelectedBookId());
             NovelParser.Chapter chapterToLoad = findChapterInCurrentState(selectChapter.chapterId());
@@ -135,7 +136,7 @@ public class ReaderViewModel implements Disposable {
             .orElse(null);
     }
 
-    private void loadChaptersForBook(String bookId) {
+    private void loadChaptersForBook(String bookId, String chapterIdToRestore) {
         // First update the state to show this book is selected
         uiState.onNext(
             uiState.getValue().toBuilder()
@@ -151,23 +152,33 @@ public class ReaderViewModel implements Disposable {
         }
 
         disposables.add(
-            RxJava3Adapter.from(chapterService.getChapterList(book))
+            RxJava3Adapter.from(bookService.getBookById(bookId)) // Fetch the latest book state
+                .flatMap(latestBook -> chapterService.getChapterList(latestBook)
+                        .map(chapters -> new kotlin.Pair<>(latestBook, chapters))) // Pair the latest book with its chapters
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                    chapters -> {
-                        String lastReadChapterId = book.getLastReadChapterId();
+                    pair -> {
+                        Book latestBook = pair.getFirst();
+                        List<NovelParser.Chapter> chapters = pair.getSecond();
+                        // Determine which chapter to select after loading. Prioritize the explicitly passed one.
+                        String chapterIdToSelect = chapterIdToRestore != null ? chapterIdToRestore : latestBook.getLastReadChapterId();
+
                         uiState.onNext(
                             uiState.getValue().toBuilder()
                                 .isLoadingChapters(false)
                                 .chapters(chapters)
                                 .build()
                         );
-                        if (lastReadChapterId != null && !lastReadChapterId.isEmpty()) {
+
+                        if (chapterIdToSelect != null && !chapterIdToSelect.isEmpty()) {
                             // Find the chapter object from the newly loaded list
                             chapters.stream()
-                                .filter(c -> c.url().equals(lastReadChapterId))
+                                .filter(c -> c.url().equals(chapterIdToSelect))
                                 .findFirst()
-                                .ifPresent(chapterToLoad -> loadChapterContent(book, chapterToLoad));
+                                .ifPresent(chapterToLoad -> loadChapterContent(latestBook, chapterToLoad));
+                        } else if (!chapters.isEmpty()) {
+                            // If no last-read chapter is found, load the first chapter by default
+                            loadChapterContent(latestBook, chapters.get(0));
                         }
                     },
                     error -> {
@@ -233,7 +244,7 @@ public class ReaderViewModel implements Disposable {
                 .build()
         );
         if (selectedBookId != null) {
-            loadChaptersForBook(selectedBookId);
+            loadChaptersForBook(selectedBookId, null);
         }
     }
 
@@ -265,12 +276,15 @@ public class ReaderViewModel implements Disposable {
     }
 
     private void refreshChapters() {
-        String bookId = uiState.getValue().getSelectedBookId();
+        ReaderUiState currentState = uiState.getValue();
+        String bookId = currentState.getSelectedBookId();
+        String chapterId = currentState.getSelectedChapterId(); // Get current chapter before refresh
         if (bookId == null) {
             LOG.warn("Cannot refresh chapters, no book selected");
             return;
         }
-        loadChaptersForBook(bookId);
+        // Pass the current chapter ID to be restored after the list is reloaded
+        loadChaptersForBook(bookId, chapterId);
     }
 
     private void addNewBook(String url) {

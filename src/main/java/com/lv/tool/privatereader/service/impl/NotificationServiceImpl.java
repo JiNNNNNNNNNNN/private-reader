@@ -1246,48 +1246,18 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
             }
         }
 
-        // 最后一次检查：确保所有页面（除了最后一页）都严格等于pageSize
-        List<String> finalPages = new ArrayList<>();
-        StringBuilder tempPage = new StringBuilder();
-
-        for (int i = 0; i < pages.size(); i++) {
-            String page = pages.get(i);
-
-            // 如果是最后一页且长度小于pageSize，直接添加
-            if (i == pages.size() - 1 && page.length() <= effectivePageSize) {
-                finalPages.add(page);
-                continue;
-            }
-
-            // 处理每个字符
-            for (int j = 0; j < page.length(); j++) {
-                tempPage.append(page.charAt(j));
-
-                // 当达到pageSize或是最后一页的最后一个字符时，添加页面
-                if (tempPage.length() == effectivePageSize || (i == pages.size() - 1 && j == page.length() - 1)) {
-                    finalPages.add(tempPage.toString());
-                    tempPage = new StringBuilder();
-                }
-            }
-        }
-
-        // 如果tempPage还有内容（不足pageSize的最后一页），添加它
-        if (tempPage.length() > 0) {
-            finalPages.add(tempPage.toString());
-        }
-
         // 记录每页的字符数，用于调试
-        if (!finalPages.isEmpty()) {
+        if (!pages.isEmpty()) {
             StringBuilder pageSizeInfo = new StringBuilder("[分页] 各页字符数: ");
-            for (int i = 0; i < finalPages.size(); i++) {
+            for (int i = 0; i < pages.size(); i++) {
                 if (i > 0) pageSizeInfo.append(", ");
-                pageSizeInfo.append("#").append(i + 1).append(": ").append(finalPages.get(i).length());
+                pageSizeInfo.append("#").append(i + 1).append(": ").append(pages.get(i).length());
             }
             LOG.info(pageSizeInfo.toString());
         }
 
-        LOG.info("[分页] 分页完成，总页数: " + finalPages.size());
-        return finalPages;
+        LOG.info("[分页] 分页完成，总页数: " + pages.size());
+        return pages;
     }
 
     /**
