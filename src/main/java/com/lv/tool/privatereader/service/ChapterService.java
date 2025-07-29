@@ -71,7 +71,7 @@ public interface ChapterService {
      * @param chapterId 章节ID
      * @return 章节内容
      */
-    String getChapterContent(@NotNull String bookId, @NotNull String chapterId);
+    String getChapterContentSync(@NotNull String bookId, @NotNull String chapterId);
 
     /**
      * 获取章节标题 (同步)
@@ -80,7 +80,16 @@ public interface ChapterService {
      * @param chapterId 章节ID
      * @return 章节标题
      */
-    String getChapterTitle(@NotNull String bookId, @NotNull String chapterId);
+    Mono<String> getChapterTitle(@NotNull String bookId, @NotNull String chapterId);
+
+    /**
+     * 获取章节内容 (异步)
+     *
+     * @param book      书籍
+     * @param chapterId 章节ID
+     * @return 章节内容的Mono
+     */
+    Mono<String> getChapterContent(@NotNull Book book, @NotNull String chapterId);
 
     /**
      * 扩展章节类，包含内容

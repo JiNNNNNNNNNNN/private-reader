@@ -155,10 +155,16 @@ public final class UniversalParser implements NovelParser {
     public List<Chapter> parseChapterList() {
         LOG.debug("开始解析章节列表...");
         List<Chapter> chapters = new ArrayList<>();
+        java.util.Set<String> seenUrls = new java.util.HashSet<>();
 
         try {
             // 确保解析器已初始化
             ensureInitialized();
+
+            if (document == null) {
+                LOG.warn("文档对象未初始化，无法解析章节列表。");
+                return chapters;
+            }
 
             Elements links = document.select("a[href]");
             LOG.debug("找到链接数量: " + links.size() + "，正在分析...");
@@ -168,7 +174,7 @@ public final class UniversalParser implements NovelParser {
                 String href = link.attr("abs:href");
                 String title = link.text().trim();
 
-                if (isChapterLink(href, title)) {
+                if (isChapterLink(href, title) && seenUrls.add(href)) {
                     chapters.add(new Chapter(title, href));
                     LOG.debug("找到章节: " + title + " -> " + href);
                 }
@@ -185,7 +191,7 @@ public final class UniversalParser implements NovelParser {
         }
 
         // 如果没有找到章节，尝试查找可能的章节目录页面
-        if (chapters.isEmpty()) {
+        if (chapters.isEmpty() && document != null) {
             LOG.info("直接解析未找到章节，尝试查找目录页面...");
             Elements catalogLinks = document.select("a:matches(目录|章节|卷章|分卷|分章)");
             LOG.debug("找到可能的目录链接数量: " + catalogLinks.size() + "，开始逐个尝试...");
@@ -206,7 +212,7 @@ public final class UniversalParser implements NovelParser {
                     for (Element chapter : catalogChapters) {
                         String href = chapter.attr("abs:href");
                         String title = chapter.text().trim();
-                        if (isChapterLink(href, title)) {
+                        if (isChapterLink(href, title) && seenUrls.add(href)) {
                             chapters.add(new Chapter(title, href));
                             LOG.debug("从目录页面找到章节: " + title + " -> " + href);
                         }
@@ -218,8 +224,8 @@ public final class UniversalParser implements NovelParser {
                         }
                     }
                     if (!chapters.isEmpty()) {
-                        LOG.info(String.format("成功从目录页面解析到章节列表，共 %d 章", chapters.size()));
-                        break;
+                        LOG.info(String.format("成功从目录页面解析到章节列表，共 %d 章，继续尝试其他目录链接...", chapters.size()));
+                        // 不再break，继续尝试解析其他目录页面以聚合所有章节
                     }
                 } catch (IOException e) {
                     LOG.warn("解析目录页面失败: " + e.getMessage() + "，尝试下一个目录链接");
@@ -262,42 +268,33 @@ public final class UniversalParser implements NovelParser {
 
             LOG.info("成功获取章节页面内容，长度: " + html.length());
 
-            // 尝试不同的编码解析内容
-            Document chapterDoc = null;
-            String[] encodings = {"UTF-8", "GBK", "GB2312", "GB18030", "BIG5"};
-            String bestContent = null;
-            String bestCharset = null;
-            int minGarbageScore = Integer.MAX_VALUE;
-
-            for (String encoding : encodings) {
-                try {
-                    // 使用获取到的HTML字符串创建Document对象
-                    Document doc = Jsoup.parse(html, chapterId);
-                    String content = extractContent(doc);
-
-                    if (content != null && !content.isEmpty()) {
-                        int garbageScore = calculateGarbageScore(content);
-                        if (garbageScore < minGarbageScore) {
-                            minGarbageScore = garbageScore;
-                            bestContent = content;
-                            bestCharset = encoding;
-                            chapterDoc = doc;
-                        }
-                    }
-                } catch (Exception e) {
-                    LOG.warn("使用" + encoding + "解析失败: " + e.getMessage());
-                }
+            // 优化：只使用UTF-8编码，避免重复解析
+            String content = null;
+            try {
+                content = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    Document chapterDoc = Jsoup.parse(html, chapterId);
+                    return extractContent(chapterDoc);
+                }).get(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException te) {
+                LOG.error("[超时保护] 内容提取超时(10秒): " + chapterId, te);
+                throw new PrivateReaderException("章节内容正文提取超时(10秒)", te, PrivateReaderException.ExceptionType.PARSE_ERROR);
+            } catch (Exception e) {
+                LOG.error("[异常保护] 内容提取异常: " + chapterId, e);
+                throw new PrivateReaderException("章节内容正文提取异常: " + e.getMessage(), e, PrivateReaderException.ExceptionType.PARSE_ERROR);
             }
 
-            if (bestContent == null || bestContent.isEmpty()) {
+            if (content != null && !content.isEmpty()) {
+                LOG.info("成功解析章节内容，使用编码: UTF-8");
+            }
+
+            if (content == null || content.isEmpty()) {
                 throw new PrivateReaderException(
                     "无法解析章节内容，请检查网页格式或编码",
                     PrivateReaderException.ExceptionType.PARSE_ERROR
                 );
             }
 
-            LOG.info("成功解析章节内容，使用编码: " + bestCharset);
-            return bestContent;
+            return content;
         } catch (IOException e) {
             throw new PrivateReaderException(
                 "获取章节内容失败: " + e.getMessage(),
@@ -373,49 +370,37 @@ public final class UniversalParser implements NovelParser {
 
     private String extractContent(Document doc) {
         try {
-            // 首先尝试直接使用特定选择器
-            Element content = doc.selectFirst("div#content1");
-            if (content == null) {
-                LOG.debug("尝试使用 content1 选择器失败，尝试其他选择器...");
-                content = doc.selectFirst("div.content_read");
-            }
-            if (content == null) {
-                LOG.debug("尝试使用 content_read 选择器失败，尝试其他选择器...");
-                content = doc.selectFirst("div.box_con #content");
-            }
+            Element content = doc.selectFirst("div#content1, div.content_read, div.box_con #content");
 
-            // 如果特定选择器没有找到内容，使用通用的文本密度分析
             if (content == null) {
-                LOG.info("常用选择器均未找到内容，切换到智能分析模式...");
+                LOG.info("常用选择器未找到内容，切换到智能分析模式...");
                 content = TextDensityAnalyzer.findContentElement(doc);
             }
 
             if (content != null) {
                 LOG.info("已找到正文内容，开始清理...");
-                // 移除广告和无关内容
                 content.select("script, style, a, iframe, div.adsbygoogle, .bottem, .bottem2").remove();
 
                 String text = content.text();
                 LOG.debug("原始内容长度: " + text.length() + " 字符");
 
-                // 清理特定的广告文本和无关内容
-                text = text.replaceAll("(?i)(广告|推广|http|www|com|net|org|xyz)[^，。！？]*", "")
-                         .replaceAll("(?i)(八八中文网|88中文网|求书网|新笔趣阁|笔趣阁|顶点小说|番茄小说)[^，。！？]*", "")
-                         .replaceAll("最新章节！", "")
-                         .replaceAll("\\s*([，。！？])\\s*", "$1\n")  // 在标点符号后添加换行
-                         .replaceAll("\\s+", "\n")  // 将多个空白字符替换为换行
-                         .replaceAll("\\n{3,}", "\n\n")  // 限制最大连续换行数
-                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+[章节卷集部篇].*$", "")  // 移除数字章节标题
-                         .replaceAll("^\\s*[0-9]+[、.][^0-9]*$", "")  // 移除数字序号标题
-                         .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+回.*$", "")  // 移除回数标题
-                         .replaceAll("^\\s*[序楔终][章话].*$", "")  // 移除特殊章节标题
-                         .replaceAll("^\\s*[前序楔引]言.*$", "")  // 移除前言等
-                         .replaceAll("^\\s*[后终]记.*$", "")  // 移除后记等
-                         .replaceAll("^\\s*[卷部篇][0-9零一二三四五六七八九十百千万亿]+.*$", "")  // 移除卷标题
-                         .replaceAll("^\\s*[上中下]篇.*$|^\\s*番外.*$|^\\s*特别篇.*$|^\\s*外传.*$", "")  // 移除特殊篇章标题
-                         .replaceAll("^\\s*[早中午晚]章.*$|^\\s*[春夏秋冬]章.*$", "")  // 移除时间相关章节标题
-                         .replaceAll("^\\s*(间|幕)?插.*$", "")  // 移除插入章节标题
-                         .trim();
+                text = text.replaceAll("(?i)^\\s*(广告|推广|http|www|com|net|org|xyz)[^，。！？]*", "")
+                        .replaceAll("(?i)(八八中文网|88中文网|求书网|新笔趣阁|笔趣阁|顶点小说|番茄小说)[^，。！？]*", "")
+                        .replaceAll("最新章节！", "")
+                        .replaceAll("\\s*([，。！？])\\s*", "$1\n")
+                        .replaceAll("\\s+", "\n")
+                        .replaceAll("\\n{3,}", "\n\n")
+                        .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+[章节卷集部篇].*$", "")
+                        .replaceAll("^\\s*[0-9]+[、.][^0-9]*$", "")
+                        .replaceAll("^\\s*第[0-9零一二三四五六七八九十百千万亿]+回.*$", "")
+                        .replaceAll("^\\s*[序楔终][章话].*$", "")
+                        .replaceAll("^\\s*[前序楔引]言.*$", "")
+                        .replaceAll("^\\s*[后终]记.*$", "")
+                        .replaceAll("^\\s*[卷部篇][0-9零一二三四五六七八九十百千万亿]+.*$", "")
+                        .replaceAll("^\\s*[上中下]篇.*$|^\\s*番外.*$|^\\s*特别篇.*$|^\\s*外传.*$", "")
+                        .replaceAll("^\\s*[早中午晚]章.*$|^\\s*[春夏秋冬]章.*$", "")
+                        .replaceAll("^\\s*(间|幕)?插.*$", "")
+                        .trim();
 
                 String formatted = TextFormatter.format(text);
                 LOG.info(String.format("内容处理完成，最终长度: %d 字符", formatted.length()));

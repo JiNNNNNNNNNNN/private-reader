@@ -1,6 +1,7 @@
 package com.lv.tool.privatereader.service;
 
 import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.service.ChapterService.EnhancedChapter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -10,7 +11,9 @@ import java.util.List;
 
 /**
  * 书籍服务接口
- * 提供响应式API获取和管理书籍
+ *
+ * 提供响应式API，用于管理书籍的元数据、阅读进度和章节信息。
+ * 屏蔽了底层数据源的实现细节，为UI层提供统一、简洁的数据访问接口。
  */
 public interface BookService {
     /**
@@ -78,7 +81,7 @@ public interface BookService {
      * @return 包含内容的章节列表，如果书籍不存在或获取失败则返回 null 或空列表
      */
     @Nullable
-    List<ChapterService.EnhancedChapter> getChaptersSync(@NotNull String bookId);
+    List<EnhancedChapter> getChaptersSync(@NotNull String bookId);
 
     /**
      * 清除章节缓存

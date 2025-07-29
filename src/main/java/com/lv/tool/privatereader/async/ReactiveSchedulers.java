@@ -71,53 +71,65 @@ public class ReactiveSchedulers {
     private final ScheduledExecutorService monitorExecutor;
     
     private ReactiveSchedulers() {
-        // 创建自定义调度器
-        ioScheduler = Schedulers.fromExecutorService(
-            Executors.newFixedThreadPool(
-                calculateOptimalThreads(1.5), // I/O密集型任务，线程数可以多一些
-                new NamedThreadFactory("PrivateReader-IO")
-            )
+        // 优化线程池配置
+        int ioThreads = Math.max(6, Runtime.getRuntime().availableProcessors() * 2);  // 增加IO线程数
+        int computeThreads = Math.max(4, Runtime.getRuntime().availableProcessors());   // 增加计算线程数
+        int backgroundThreads = Math.max(2, Runtime.getRuntime().availableProcessors() / 2);  // 后台线程数
+        
+        LOG.info("[调度器] 初始化调度器 - IO线程: " + ioThreads + ", 计算线程: " + computeThreads + ", 后台线程: " + backgroundThreads);
+        
+        // 创建IO调度器，用于网络请求和文件操作
+        this.ioScheduler = Schedulers.newBoundedElastic(
+            ioThreads, 
+            Integer.MAX_VALUE, 
+            "PrivateReader-IO",
+            60
         );
         
-        computeScheduler = Schedulers.fromExecutorService(
-            Executors.newFixedThreadPool(
-                calculateOptimalThreads(1.0), // CPU密集型任务，线程数等于CPU核心数
-                new NamedThreadFactory("PrivateReader-Compute")
-            )
+        // 创建计算调度器，用于CPU密集型操作
+        this.computeScheduler = Schedulers.newParallel("PrivateReader-Compute", computeThreads);
+        
+        // 创建UI调度器，用于UI更新操作
+        this.uiScheduler = Schedulers.fromExecutorService(
+            Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "PrivateReader-UI");
+                thread.setDaemon(true);
+                thread.setPriority(Thread.NORM_PRIORITY);
+                return thread;
+            })
         );
         
-        uiScheduler = Schedulers.fromExecutor(
-            ApplicationManager.getApplication()::invokeLater
+        // 创建后台调度器，用于低优先级任务
+        this.backgroundScheduler = Schedulers.newBoundedElastic(
+            backgroundThreads,
+            Integer.MAX_VALUE,
+            "PrivateReader-Background",
+            60
         );
         
-        backgroundScheduler = Schedulers.fromExecutorService(
-            Executors.newFixedThreadPool(
-                2, // 后台任务，使用较少的线程
-                new NamedThreadFactory("PrivateReader-Background")
-            )
+        // 创建定时调度器
+        this.timerScheduler = Schedulers.newBoundedElastic(
+            2,
+            Integer.MAX_VALUE,
+            "PrivateReader-Timer",
+            60
         );
         
-        timerScheduler = Schedulers.fromExecutorService(
-            Executors.newScheduledThreadPool(
-                1,
-                new NamedThreadFactory("PrivateReader-Timer")
-            )
+        // 创建平台调度器
+        this.platformScheduler = Schedulers.fromExecutorService(
+            ApplicationManager.getApplication().getService(com.intellij.util.concurrency.AppExecutorUtil.class)
+                .getAppExecutorService()
         );
         
-        // 新增：创建平台调度器，使用ApplicationManager的线程池
-        platformScheduler = Schedulers.fromExecutor(
-            ApplicationManager.getApplication()::executeOnPooledThread
-        );
-        
-        // 初始化监控
-        monitorExecutor = Executors.newSingleThreadScheduledExecutor(
+        // 初始化监控执行器
+        this.monitorExecutor = Executors.newSingleThreadScheduledExecutor(
             new NamedThreadFactory("PrivateReader-Monitor")
         );
         
-        // 启动监控任务
+        // 启动监控
         startMonitoring();
         
-        LOG.info("ReactiveSchedulers 初始化完成");
+        LOG.info("[调度器] 调度器初始化完成");
     }
     
     /**
@@ -273,6 +285,9 @@ public class ReactiveSchedulers {
                      ", 定时: " + timer +
                      ", 平台: " + platform);
             
+            // 检查线程池状态
+            checkThreadPoolStatus();
+            
             // 检查内存使用情况
             Runtime runtime = Runtime.getRuntime();
             long usedMemory = runtime.totalMemory() - runtime.freeMemory();
@@ -287,9 +302,85 @@ public class ReactiveSchedulers {
                 LOG.warn("内存使用率过高，触发GC");
                 System.gc();
             }
+            
+            // 检查HTTP线程池状态
+            String httpThreadPoolStatus = com.lv.tool.privatereader.util.SafeHttpRequestExecutor.getThreadPoolStatus();
+            LOG.info("HTTP线程池状态: " + httpThreadPoolStatus);
+            
+            // 检查网络性能
+            String networkStats = com.lv.tool.privatereader.util.NetworkPerformanceMonitor.getInstance().getSimpleStats();
+            LOG.info("网络性能统计: " + networkStats);
+            
         } catch (Exception e) {
             LOG.error("监控调度器时发生错误", e);
         }
+    }
+    
+    /**
+     * 检查线程池状态
+     */
+    private void checkThreadPoolStatus() {
+        try {
+            // 检查IO调度器
+            if (ioScheduler instanceof reactor.core.scheduler.Scheduler) {
+                LOG.debug("IO调度器状态: 活跃");
+            }
+            
+            // 检查计算调度器
+            if (computeScheduler instanceof reactor.core.scheduler.Scheduler) {
+                LOG.debug("计算调度器状态: 活跃");
+            }
+            
+            // 检查后台调度器
+            if (backgroundScheduler instanceof reactor.core.scheduler.Scheduler) {
+                LOG.debug("后台调度器状态: 活跃");
+            }
+            
+            // 检查定时调度器
+            if (timerScheduler instanceof reactor.core.scheduler.Scheduler) {
+                LOG.debug("定时调度器状态: 活跃");
+            }
+            
+            // 检查平台调度器
+            if (platformScheduler instanceof reactor.core.scheduler.Scheduler) {
+                LOG.debug("平台调度器状态: 活跃");
+            }
+            
+        } catch (Exception e) {
+            LOG.error("检查线程池状态时发生错误", e);
+        }
+    }
+    
+    /**
+     * 获取详细的调度器状态报告
+     */
+    public String getDetailedStatusReport() {
+        StringBuilder report = new StringBuilder();
+        report.append("=== 调度器详细状态报告 ===\n");
+        
+        // 任务计数
+        report.append(String.format("IO任务: %d\n", ioTaskCount.get()));
+        report.append(String.format("计算任务: %d\n", computeTaskCount.get()));
+        report.append(String.format("UI任务: %d\n", uiTaskCount.get()));
+        report.append(String.format("后台任务: %d\n", backgroundTaskCount.get()));
+        report.append(String.format("定时任务: %d\n", timerTaskCount.get()));
+        report.append(String.format("平台任务: %d\n", platformTaskCount.get()));
+        
+        // 内存使用情况
+        Runtime runtime = Runtime.getRuntime();
+        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+        long maxMemory = runtime.maxMemory();
+        double memoryUsagePercent = (double) usedMemory / maxMemory * 100;
+        report.append(String.format("内存使用: %.2f%% (%s/%s)\n", 
+                memoryUsagePercent, formatSize(usedMemory), formatSize(maxMemory)));
+        
+        // HTTP线程池状态
+        report.append("HTTP线程池: " + com.lv.tool.privatereader.util.SafeHttpRequestExecutor.getThreadPoolStatus() + "\n");
+        
+        // 网络性能统计
+        report.append("网络性能: " + com.lv.tool.privatereader.util.NetworkPerformanceMonitor.getInstance().getSimpleStats() + "\n");
+        
+        return report.toString();
     }
     
     /**

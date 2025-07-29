@@ -12,6 +12,8 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import reactor.core.publisher.Mono;
+import com.intellij.openapi.application.ModalityState;
 
 import java.util.Optional;
 
@@ -33,6 +35,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
     private final ReaderModeSettings readerModeSettings;
     private final NotificationService notificationService;
     private final ChapterService chapterService;
+    private final BookService bookService;
     private final ReadingProgressRepository readingProgressRepository;
     private final NotificationReaderSettings notificationReaderSettings;
     private Project project; // Made non-final to allow initialization in constructor body
@@ -55,6 +58,7 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         this.readerModeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
         this.notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
         this.chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
+        this.bookService = ApplicationManager.getApplication().getService(BookService.class);
         this.readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
         this.notificationReaderSettings = ApplicationManager.getApplication().getService(NotificationReaderSettings.class);
 
@@ -110,41 +114,45 @@ public class NotificationBarModeService implements Disposable, NotificationReade
         final Project finalProject = currentProject;
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                // 2. Get current chapter content and title
-                String chapterContent = chapterService.getChapterContent(bookId, chapterId);
-                String chapterTitle = chapterService.getChapterTitle(bookId, chapterId);
-                
-                // 在UI线程中显示通知
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    // 3. Calculate total pages and get current page content
-                    notificationService.setCurrentChapterContent(chapterContent);
-                    int totalPages = notificationService.calculateTotalPages(chapterContent);
-                    
-                    // 确保页码在有效范围内
-                    int validPageNumber = pageNumber;
-                    if (validPageNumber <= 0) {
-                        validPageNumber = 1; // 如果页码无效，默认为第一页
-                    } else if (validPageNumber > totalPages) {
-                        validPageNumber = totalPages; // 如果页码超出范围，使用最后一页
-                    }
-                    
-                    this.currentPageNumber = validPageNumber; // 更新为有效的页码
-                    
-                    // 5. Use NotificationService to display notification with actions
-                    notificationService.showChapterContent(finalProject, bookId, chapterId, validPageNumber, chapterTitle, chapterContent);
-                    
-                    // 7. 记录日志
-                    System.out.println("[通知栏模式] 激活通知栏模式: 书籍=" + bookId + ", 章节=" + chapterId + ", 页码=" + validPageNumber);
-                    
-                    // Update Memory Bank
-                    updateActiveContext("Activated Notification Bar Mode for book: " + bookId + ", chapter: " + chapterId + ", page: " + validPageNumber);
-                    updateProgress("Started implementing Notification Bar Mode activation.");
-                });
+                // Since we are on a pooled thread, we can block to get the book object.
+                Book book = bookService.getBookById(bookId).block();
+                if (book == null) {
+                    throw new IllegalStateException("Book not found: " + bookId);
+                }
+
+                // Get content and title in parallel
+                Mono<String> contentMono = chapterService.getChapterContent(book, chapterId);
+                Mono<String> titleMono = chapterService.getChapterTitle(bookId, chapterId);
+
+                // Zip them together
+                Mono.zip(contentMono, titleMono)
+                    .subscribe(
+                        tuple -> {
+                            String chapterContent = tuple.getT1();
+                            String chapterTitle = tuple.getT2();
+                            
+                            ApplicationManager.getApplication().invokeLater(() -> {
+                                notificationService.setCurrentChapterContent(chapterContent);
+                                int totalPages = notificationService.calculateTotalPages(chapterContent);
+                                
+                                int validPageNumber = Math.max(1, Math.min(pageNumber, totalPages > 0 ? totalPages : 1));
+                                this.currentPageNumber = validPageNumber;
+                                
+                                notificationService.showChapterContent(finalProject, bookId, chapterId, validPageNumber, chapterTitle, chapterContent);
+                            }, ModalityState.defaultModalityState());
+                        },
+                        error -> {
+                            LOG.error("Failed to activate notification mode", error);
+                            ApplicationManager.getApplication().invokeLater(() -> {
+                                notificationService.showError("Activation Failed", "Could not load chapter: " + error.getMessage());
+                            }, ModalityState.defaultModalityState());
+                        }
+                    );
             } catch (Exception e) {
-                LOG.error("激活通知栏模式失败", e);
+                LOG.error("Top-level error activating notification mode", e);
                 ApplicationManager.getApplication().invokeLater(() -> {
-                    notificationService.showError("激活通知栏模式失败", "无法加载章节内容: " + e.getMessage());
-                });
+                    notificationService.showError("Activation Error", "A critical error occurred: " + e.getMessage());
+                }, ModalityState.defaultModalityState());
             }
         });
     }
@@ -376,28 +384,49 @@ public class NotificationBarModeService implements Disposable, NotificationReade
 
         LOG.debug("Attempting to refresh notification display for book: " + currentBookId +
                   ", chapter: " + currentChapterId + ", page: " + currentPageNumber);
-        try {
-            // Fetch the full chapter content again, as settings like pageSize might have changed
-            String chapterContent = chapterService.getChapterContent(currentBookId, currentChapterId);
-            String chapterTitle = chapterService.getChapterTitle(currentBookId, currentChapterId);
+        
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                Book book = bookService.getBookById(currentBookId).block();
+                if (book == null) {
+                    throw new IllegalStateException("Book not found for refresh: " + currentBookId);
+                }
 
-            if (chapterContent == null || chapterContent.isEmpty()) {
-                LOG.error("Failed to refresh notification: chapter content is null or empty for " + currentChapterId);
-                notificationService.showError("刷新失败", "无法获取章节内容: " + chapterTitle);
-                return;
+                Mono<String> contentMono = chapterService.getChapterContent(book, currentChapterId);
+                Mono<String> titleMono = chapterService.getChapterTitle(currentBookId, currentChapterId);
+
+                Mono.zip(contentMono, titleMono)
+                    .subscribe(
+                        tuple -> {
+                            String chapterContent = tuple.getT1();
+                            String chapterTitle = tuple.getT2();
+                            
+                            if (chapterContent == null || chapterContent.isEmpty()) {
+                                LOG.error("Failed to refresh: content is null/empty for chapter " + currentChapterId);
+                                ApplicationManager.getApplication().invokeLater(() -> {
+                                    notificationService.showError("Refresh Failed", "Could not retrieve chapter content.");
+                                }, ModalityState.defaultModalityState());
+                                return;
+                            }
+                            
+                            ApplicationManager.getApplication().invokeLater(()-> {
+                                notificationService.showChapterContent(project, currentBookId, currentChapterId, currentPageNumber, chapterTitle, chapterContent);
+                            }, ModalityState.defaultModalityState());
+                        },
+                        error -> {
+                            LOG.error("Failed to refresh notification", error);
+                             ApplicationManager.getApplication().invokeLater(() -> {
+                                notificationService.showError("Refresh Failed", "Error applying settings: " + error.getMessage());
+                            }, ModalityState.defaultModalityState());
+                        }
+                    );
+            } catch (Exception e) {
+                 LOG.error("Top-level error refreshing notification", e);
+                 ApplicationManager.getApplication().invokeLater(() -> {
+                    notificationService.showError("Refresh Error", "A critical error occurred: " + e.getMessage());
+                }, ModalityState.defaultModalityState());
             }
-            
-            // currentPageNumber is 1-based and maintained by this service.
-            // NotificationServiceImpl.showChapterContent is designed to take the full content
-            // and the target 1-based page number, handling pagination internally.
-            notificationService.showChapterContent(project, currentBookId, currentChapterId, currentPageNumber, chapterTitle, chapterContent);
-            LOG.info("Notification display refreshed successfully via showChapterContent due to settings change.");
-
-        } catch (Exception e) {
-            LOG.error("Error during settings-triggered notification display refresh: " + e.getMessage(), e);
-            // Optionally, inform the user via a notification
-            notificationService.showError("通知刷新失败", "应用新设置时出错: " + e.getMessage());
-        }
+        });
     }
 
     // Helper methods to update Memory Bank - these will be replaced by actual tool calls

@@ -53,20 +53,6 @@ public class ChapterListDialog extends DialogWrapper {
             LOG.info("成功获取ChapterService服务");
         }
 
-        // 预初始化服务
-        try {
-            LOG.info("预初始化ChapterService服务...");
-            // 使用同步方法确保服务已初始化
-            if (this.chapterService instanceof com.lv.tool.privatereader.service.impl.ChapterServiceImpl) {
-                // 调用一个简单的同步方法来触发服务初始化
-                String testTitle = this.chapterService.getChapterTitle(book.getId(), "test");
-                LOG.info("ChapterService服务初始化测试完成: " + testTitle);
-            }
-        } catch (Exception e) {
-            LOG.warn("ChapterService服务预初始化失败，这可能导致章节列表加载延迟: " + e.getMessage(), e);
-            // 不抛出异常，继续执行
-        }
-
         init();
         setTitle("章节列表 - " + book.getTitle());
         setSize(500, 600);

@@ -14,6 +14,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.lv.tool.privatereader.parser.ParserFactory;
 import com.google.gson.annotations.Expose;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 书籍模型类
@@ -67,6 +69,12 @@ public class Book {
     @Tag("lastReadPage")
     @Expose
     private int lastReadPage = 1;
+    
+    /** 章节索引Map，用于快速查找章节，key为章节URL，value为章节在列表中的索引 */
+    @Transient private Map<String, Integer> chapterIndexMap;
+    
+    /** 章节对象Map，用于快速获取章节对象，key为章节URL，value为章节对象 */
+    @Transient private Map<String, Chapter> chapterObjectMap;
 
     public Book() {
         this.lastReadPosition = 0;
@@ -75,6 +83,8 @@ public class Book {
         this.finished = false;
         this.lastReadTimeMillis = System.currentTimeMillis();
         this.createTimeMillis = System.currentTimeMillis();
+        this.chapterIndexMap = new HashMap<>();
+        this.chapterObjectMap = new HashMap<>();
     }
 
     public Book(String id, String title, String author, String url) {
@@ -214,7 +224,85 @@ public class Book {
         this.cachedChapters = chapters;
         if (chapters != null) {
             this.totalChapters = chapters.size();
+            // 更新章节索引Map
+            updateChapterMaps(chapters);
+        } else {
+            // 如果章节列表为null，清空索引Map
+            if (chapterIndexMap != null) {
+                chapterIndexMap.clear();
+            }
+            if (chapterObjectMap != null) {
+                chapterObjectMap.clear();
+            }
         }
+    }
+    
+    /**
+     * 更新章节索引Map和章节对象Map
+     * @param chapters 章节列表
+     */
+    private void updateChapterMaps(List<Chapter> chapters) {
+        if (chapterIndexMap == null) {
+            chapterIndexMap = new HashMap<>();
+        } else {
+            chapterIndexMap.clear();
+        }
+        
+        if (chapterObjectMap == null) {
+            chapterObjectMap = new HashMap<>();
+        } else {
+            chapterObjectMap.clear();
+        }
+        
+        if (chapters != null) {
+            for (int i = 0; i < chapters.size(); i++) {
+                Chapter chapter = chapters.get(i);
+                if (chapter != null && chapter.url() != null) {
+                    chapterIndexMap.put(chapter.url(), i);
+                    chapterObjectMap.put(chapter.url(), chapter);
+                }
+            }
+        }
+    }
+    
+    /**
+     * 根据章节URL获取章节在列表中的索引
+     * @param chapterId 章节URL
+     * @return 章节索引，如果未找到则返回-1
+     */
+    @Transient
+    public int getChapterIndex(String chapterId) {
+        if (chapterIndexMap != null && chapterId != null) {
+            Integer index = chapterIndexMap.get(chapterId);
+            return index != null ? index : -1;
+        }
+        return -1;
+    }
+    
+    /**
+     * 根据章节URL获取章节对象
+     * @param chapterId 章节URL
+     * @return 章节对象，如果未找到则返回null
+     */
+    @Transient
+    public Chapter getChapterById(String chapterId) {
+        if (chapterObjectMap != null && chapterId != null) {
+            return chapterObjectMap.get(chapterId);
+        }
+        return null;
+    }
+    
+    /**
+     * 根据索引获取章节对象
+     * @param index 章节索引
+     * @return 章节对象，如果索引无效则返回null
+     */
+    @Transient
+    public Chapter getChapterByIndex(int index) {
+        if (cachedChapters != null && index >= 0 && index < cachedChapters.size()) {
+            return cachedChapters.get(index);
+        }
+        return null;
     }
 
     @Transient

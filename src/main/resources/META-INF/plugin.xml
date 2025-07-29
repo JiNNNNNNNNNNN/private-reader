@@ -150,7 +150,7 @@
                    serviceImplementation="com.lv.tool.privatereader.source.impl.DefaultSourceManager"/>
 
     <!-- 只保留响应式预加载器 -->
-    <applicationService serviceImplementation="com.lv.tool.privatereader.reader.ReactiveChapterPreloader"/>
+    <applicationService serviceImplementation="com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader"/>
 
     <!-- Repository Module -->
     <applicationService serviceImplementation="com.lv.tool.privatereader.repository.RepositoryModule"/>
