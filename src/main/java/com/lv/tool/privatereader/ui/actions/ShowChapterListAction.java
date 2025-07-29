@@ -7,6 +7,8 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.diagnostic.Logger;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
+import com.lv.tool.privatereader.service.NotificationService;
+import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.ui.ReaderPanel;
 import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import com.lv.tool.privatereader.ui.dialog.ChapterListDialog;
@@ -34,10 +36,7 @@ public class ShowChapterListAction extends BaseAction {
                         // 检查书籍解析器
                         if (selectedBook.getParser() == null) {
                             LOG.error("无法显示章节列表：书籍解析器为空，书籍=" + selectedBook.getTitle() + ", URL=" + selectedBook.getUrl());
-                            Messages.showErrorDialog(project,
-                                "无法显示章节列表：书籍解析器初始化失败\n\n" +
-                                "请检查书籍URL是否有效：" + selectedBook.getUrl(),
-                                "错误");
+                            ApplicationManager.getApplication().getService(NotificationService.class).showError("无法显示章节列表", "书籍解析器初始化失败");
                             return;
                         }
 
@@ -53,10 +52,7 @@ public class ShowChapterListAction extends BaseAction {
                         }
                     } catch (Exception ex) {
                         LOG.error("显示章节列表对话框失败：" + ex.getMessage(), ex);
-                        Messages.showErrorDialog(project,
-                            "显示章节列表对话框失败：" + ex.getMessage() +
-                            "\n\n请检查书籍信息是否完整或尝试重新添加书籍。",
-                            "错误");
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("显示章节列表对话框失败", ex.getMessage());
                     }
                 } else {
                     LOG.warn("无法显示章节列表：未选择书籍");
@@ -64,7 +60,7 @@ public class ShowChapterListAction extends BaseAction {
                 }
             } else {
                 LOG.error("无法显示章节列表：未找到阅读器面板");
-                Messages.showErrorDialog(project, "无法显示章节列表：未找到阅读器面板", "错误");
+                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "无法显示章节列表：未找到阅读器面板");
             }
         }
     }

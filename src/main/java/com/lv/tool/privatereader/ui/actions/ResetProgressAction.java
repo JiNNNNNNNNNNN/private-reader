@@ -8,6 +8,7 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
+import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.ui.ReaderPanel;
 import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
@@ -66,11 +67,11 @@ public class ResetProgressAction extends AnAction implements DumbAware {
                      String.format("已重置《%s》的阅读进度", selectedBook.getTitle()),
                      "重置成功");
              } catch (Exception ex) {
-                  Messages.showErrorDialog(project, "重置进度时出错: " + ex.getMessage(), "错误");
+                  ApplicationManager.getApplication().getService(NotificationService.class).showError("重置进度时出错", ex.getMessage());
                   LOG.error("Error resetting progress for book: " + selectedBook.getId(), ex);
              }
         } else {
-             Messages.showErrorDialog(project, "无法获取阅读进度服务，无法重置进度", "错误");
+             ApplicationManager.getApplication().getService(NotificationService.class).showError("重置失败", "无法获取阅读进度服务，无法重置进度");
              LOG.error("Could not get ReadingProgressRepository service.");
         }
     }

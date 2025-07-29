@@ -1096,8 +1096,9 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }, ModalityState.defaultModalityState());
 
         // Handle errors
+        // 错误处理逻辑现在由ViewModel通过NotificationService处理，因此UI层面不再需要显示弹窗
         if (state.getError() != null && !state.getError().isEmpty()) {
-            Messages.showErrorDialog(project, state.getError(), "错误");
+            // Messages.showErrorDialog(project, state.getError(), "错误");
             // Optionally clear the error from the state after showing it
         }
 

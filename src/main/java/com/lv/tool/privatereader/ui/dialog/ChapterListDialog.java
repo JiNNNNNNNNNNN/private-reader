@@ -10,6 +10,7 @@ import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
+import com.lv.tool.privatereader.service.NotificationService;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -200,7 +201,7 @@ public class ChapterListDialog extends DialogWrapper {
         // 检查书籍解析器
         if (book.getParser() == null) {
             LOG.error("书籍解析器为空，无法加载章节列表：书籍=" + book.getTitle() + ", URL=" + book.getUrl());
-            Messages.showErrorDialog(project, "无法加载章节列表：书籍解析器初始化失败", "错误");
+            ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "无法加载章节列表：书籍解析器初始化失败");
             chapterList.setListData(new NovelParser.Chapter[0]);
             setLoading(false);
             isLoading = false;
@@ -270,10 +271,7 @@ public class ChapterListDialog extends DialogWrapper {
                 return;
             } else {
                 LOG.warn("没有缓存的章节列表，无法在离线模式下加载");
-                Messages.showErrorDialog(project,
-                    "网络连接不可用，且没有缓存的章节列表。\n\n" +
-                    "请检查网络连接后重试。",
-                    "无法加载章节列表");
+                ApplicationManager.getApplication().getService(NotificationService.class).showError("无法加载章节列表", "网络连接不可用，且没有缓存的章节列表。");
                 chapterList.setListData(new NovelParser.Chapter[0]);
                 setLoading(false);
                 isLoading = false;
@@ -415,11 +413,7 @@ public class ChapterListDialog extends DialogWrapper {
                             "请检查网络连接后刷新章节列表。",
                             "使用缓存");
                     } else {
-                        Messages.showErrorDialog(project,
-                            "加载章节列表失败: " + error.getMessage() +
-                            "\n\n没有缓存的章节列表可用。\n\n" +
-                            "请检查网络连接或尝试刷新章节列表。",
-                            "错误");
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("加载章节列表失败", error.getMessage());
                         chapterList.setListData(new NovelParser.Chapter[0]);
                     }
 
@@ -458,7 +452,7 @@ public class ChapterListDialog extends DialogWrapper {
         // 检查书籍解析器
         if (book.getParser() == null) {
             LOG.error("书籍解析器为空，无法刷新章节列表：书籍=" + book.getTitle() + ", URL=" + book.getUrl());
-            Messages.showErrorDialog(project, "无法刷新章节列表：书籍解析器初始化失败", "错误");
+            ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "无法刷新章节列表：书籍解析器初始化失败");
             setLoading(false);
             isLoading = false;
             return;
@@ -533,10 +527,7 @@ public class ChapterListDialog extends DialogWrapper {
                                 loadingProgress.setStringPainted(false);
 
                                 // 显示错误消息
-                                Messages.showErrorDialog(project,
-                                    "刷新章节列表失败: " + error.getMessage() +
-                                    "\n\n请检查网络连接或稍后再试。",
-                                    "错误");
+                                ApplicationManager.getApplication().getService(NotificationService.class).showError("刷新章节列表失败", error.getMessage());
 
                                 // 设置加载状态
                                 setLoading(false);
@@ -587,10 +578,7 @@ public class ChapterListDialog extends DialogWrapper {
                                 loadingProgress.setStringPainted(false);
 
                                 // 显示错误消息
-                                Messages.showErrorDialog(project,
-                                    "刷新章节列表失败: " + error2.getMessage() +
-                                    "\n\n请检查网络连接或稍后再试。",
-                                    "错误");
+                                ApplicationManager.getApplication().getService(NotificationService.class).showError("刷新章节列表失败", error2.getMessage());
 
                                 // 设置加载状态
                                 setLoading(false);

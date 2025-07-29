@@ -8,6 +8,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.service.BookService;
+import com.lv.tool.privatereader.service.NotificationService;
+import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.ui.ReaderPanel;
 import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import org.jetbrains.annotations.NotNull;
@@ -48,7 +50,7 @@ public class RemoveBookAction extends AnAction implements DumbAware {
         if (Messages.showYesNoDialog(readerPanel, "确定要删除选定的书籍 '" + selectedBook.getTitle() + "' 吗？\n此操作不可撤销。", "确认删除", Messages.getQuestionIcon()) == Messages.YES) {
             BookService bookService = project.getService(BookService.class);
             if (bookService == null) {
-                Messages.showErrorDialog(project, "书籍服务不可用", "错误");
+                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "书籍服务不可用");
                 return;
             }
 
@@ -66,7 +68,7 @@ public class RemoveBookAction extends AnAction implements DumbAware {
                     },
                     error -> {
                         LOG.error("删除书籍时发生错误 for book: " + selectedBook.getTitle(), error);
-                        Messages.showErrorDialog(readerPanel, "删除书籍时发生错误: " + error.getMessage(), "删除错误");
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("删除错误", "删除书籍时发生错误: " + error.getMessage());
                     }
                 );
         }

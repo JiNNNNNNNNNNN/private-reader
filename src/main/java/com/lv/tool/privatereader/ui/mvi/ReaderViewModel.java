@@ -7,11 +7,13 @@ import com.intellij.openapi.project.Project;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.async.RxJava3Adapter;
 import com.lv.tool.privatereader.model.Book;
+import com.lv.tool.privatereader.storage.cache.ReactiveChapterPreloader;
 import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.parser.site.UniversalParser;
 import com.lv.tool.privatereader.service.BookService;
 import com.lv.tool.privatereader.service.ChapterService;
 import com.lv.tool.privatereader.messaging.CurrentChapterNotifier;
+import com.lv.tool.privatereader.service.NotificationService;
 
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
@@ -32,6 +34,8 @@ public class ReaderViewModel implements Disposable {
 
     private final BookService bookService;
     private final ChapterService chapterService;
+    private final ReactiveChapterPreloader chapterPreloader;
+    private final NotificationService notificationService;
     private final CompositeDisposable disposables = new CompositeDisposable();
 
     private final PublishSubject<IReaderIntent> intentSubject = PublishSubject.create();
@@ -40,6 +44,8 @@ public class ReaderViewModel implements Disposable {
     public ReaderViewModel(Project project) {
         this.bookService = ApplicationManager.getApplication().getService(BookService.class);
         this.chapterService = ApplicationManager.getApplication().getService(ChapterService.class);
+        this.chapterPreloader = ApplicationManager.getApplication().getService(ReactiveChapterPreloader.class);
+        this.notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
 
         disposables.add(
             intentSubject
@@ -114,13 +120,16 @@ public class ReaderViewModel implements Disposable {
                                             .syncPublisher(CurrentChapterNotifier.TOPIC)
                                             .currentChapterChanged(book, chapter);
                                     LOG.debug("Published CurrentChapterNotifier event for: " + chapter.title());
+
+                                    // After successfully loading a chapter, trigger preloading for adjacent chapters.
+                                    preloadAdjacentChapters(book, chapter);
                                 },
                                 error -> {
                                     LOG.error("Failed to load content for chapter: " + chapter.url(), error);
+                                    notificationService.showError("加载章节内容失败", error.getMessage());
                                     uiState.onNext(
                                             uiState.getValue().toBuilder()
                                                     .isLoadingContent(false)
-                                                    .error("加载章节内容失败: " + error.getMessage())
                                                     .build()
                                     );
                                 }
@@ -183,10 +192,10 @@ public class ReaderViewModel implements Disposable {
                     },
                     error -> {
                         LOG.error("Failed to load chapters for book: " + bookId, error);
+                        notificationService.showError("加载章节列表失败", error.getMessage());
                         uiState.onNext(
                             uiState.getValue().toBuilder()
                                 .isLoadingChapters(false)
-                                .error("加载章节列表失败: " + error.getMessage())
                                 .build()
                         );
                     }
@@ -230,7 +239,8 @@ public class ReaderViewModel implements Disposable {
                     );
                 }, error -> {
                     LOG.error("Failed to load books", error);
-                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("加载书籍失败: " + error.getMessage()).build());
+                    notificationService.showError("加载书籍失败", error.getMessage());
+                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                 })
         );
     }
@@ -260,7 +270,8 @@ public class ReaderViewModel implements Disposable {
                     books -> uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).books(books).build()),
                     error -> {
                         LOG.error("Failed to search books", error);
-                        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("搜索书籍失败: " + error.getMessage()).build());
+                        notificationService.showError("搜索书籍失败", error.getMessage());
+                        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                     }
                 )
         );
@@ -299,16 +310,19 @@ public class ReaderViewModel implements Disposable {
                                 if (success) {
                                     loadInitialData(); // Just reload everything for simplicity
                                 } else {
-                                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("添加书籍失败").build());
+                                    notificationService.showError("添加书籍失败", "无法添加书籍，请稍后再试。");
+                                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                                 }
                             }, error -> {
                                 LOG.error("Failed to add book", error);
-                                uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("添加书籍失败: " + error.getMessage()).build());
+                                notificationService.showError("添加书籍失败", error.getMessage());
+                                uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                             })
                     );
                 }, error -> {
                     LOG.error("Failed to fetch book info", error);
-                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("获取书籍信息失败: " + error.getMessage()).build());
+                    notificationService.showError("获取书籍信息失败", error.getMessage());
+                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                 })
         );
     }
@@ -341,11 +355,13 @@ public class ReaderViewModel implements Disposable {
                     if(success) {
                         loadInitialData(); // Just reload everything
                     } else {
-                         uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("删除书籍失败").build());
+                        notificationService.showError("删除书籍失败", "无法删除书籍，请稍后再试。");
+                        uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                     }
                 }, error -> {
                     LOG.error("Failed to delete book", error);
-                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).error("删除书籍失败: " + error.getMessage()).build());
+                    notificationService.showError("删除书籍失败", error.getMessage());
+                    uiState.onNext(uiState.getValue().toBuilder().isLoadingBooks(false).build());
                 })
         );
     }
@@ -394,12 +410,41 @@ public class ReaderViewModel implements Disposable {
                        uiState.onNext(
                            uiState.getValue().toBuilder()
                                .isLoadingChapters(false)
-                               .error("加载章节列表失败: " + error.getMessage())
                                .build()
                        );
+                       notificationService.showError("加载章节列表失败", error.getMessage());
                    }
                )
        );
+   }
+
+   private void preloadAdjacentChapters(Book book, NovelParser.Chapter currentChapter) {
+       if (chapterPreloader == null || book == null || currentChapter == null) {
+           return;
+       }
+       List<NovelParser.Chapter> chapters = uiState.getValue().getChapters();
+       if (chapters == null || chapters.isEmpty()) {
+           return;
+       }
+
+       int currentIndex = -1;
+       for (int i = 0; i < chapters.size(); i++) {
+           if (chapters.get(i).url().equals(currentChapter.url())) {
+               currentIndex = i;
+               break;
+           }
+       }
+
+       if (currentIndex != -1) {
+           final int indexToPreload = currentIndex;
+           // The preloader runs asynchronously, so we just subscribe to it.
+           // It's a service, so its lifecycle is managed by the application.
+           chapterPreloader.preloadChaptersReactive(book, indexToPreload).subscribe(
+               v -> { /* onNext is not called for Mono<Void>, do nothing */ },
+               error -> LOG.error("Error initiating chapter preloading", error),
+               () -> LOG.debug("Preloading initiated for chapters around index: " + indexToPreload)
+           );
+       }
    }
 
     @Override

@@ -26,6 +26,7 @@ import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ChapterCacheRepository;
 import com.lv.tool.privatereader.repository.RepositoryModule;
 import com.lv.tool.privatereader.repository.StorageRepository;
+import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.settings.CacheSettings;
 import com.lv.tool.privatereader.settings.CacheSettingsListener;
 import org.jetbrains.annotations.Nls;
@@ -56,9 +57,11 @@ public class CacheConfigurable implements Configurable {
     private JLabel booksPathLabel;
     private JButton clearCacheButton;
     private final CacheSettings settings;
+    private final NotificationService notificationService;
 
     public CacheConfigurable() {
         this.settings = ApplicationManager.getApplication().getService(CacheSettings.class);
+        this.notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
     }
 
     @Nls(capitalization = Nls.Capitalization.Title)
@@ -163,7 +166,7 @@ public class CacheConfigurable implements Configurable {
                 }
             } catch (Exception e) {
                 LOG.error("打开书籍数据目录失败: " + e.getMessage(), e);
-                Messages.showErrorDialog("打开书籍数据目录失败: " + e.getMessage(), "错误");
+                notificationService.showError("打开书籍数据目录失败", e.getMessage());
             }
         }, null);
 
@@ -203,11 +206,11 @@ public class CacheConfigurable implements Configurable {
                         cacheManager.clearAllCache();
                         Messages.showInfoMessage("缓存已清理完成", "清理缓存");
                     } else {
-                        Messages.showErrorDialog("无法清理缓存: 没有打开的项目", "错误");
+                        notificationService.showError("无法清理缓存", "没有打开的项目");
                     }
                 } catch (Exception ex) {
                     LOG.error("清理缓存失败: " + ex.getMessage(), ex);
-                    Messages.showErrorDialog("清理缓存失败: " + ex.getMessage(), "错误");
+                    notificationService.showError("清理缓存失败", ex.getMessage());
                 }
             }
         });
@@ -383,7 +386,7 @@ public class CacheConfigurable implements Configurable {
 
         } catch (Exception e) {
             LOG.error("打开目录失败: " + e.getMessage(), e);
-            Messages.showErrorDialog("打开目录失败: " + e.getMessage(), "错误");
+            notificationService.showError("打开目录失败", e.getMessage());
 
             // 最后尝试使用BrowserUtil作为备选方案
             try {
@@ -447,7 +450,7 @@ public class CacheConfigurable implements Configurable {
             Messages.showInfoMessage("路径已复制到剪贴板", "复制成功");
         } catch (Exception e) {
             LOG.error("复制到剪贴板失败: " + e.getMessage(), e);
-            Messages.showErrorDialog("复制到剪贴板失败: " + e.getMessage(), "错误");
+            notificationService.showError("复制到剪贴板失败", e.getMessage());
         }
     }
 

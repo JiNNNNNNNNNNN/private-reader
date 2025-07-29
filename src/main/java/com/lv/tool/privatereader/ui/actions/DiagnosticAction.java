@@ -9,6 +9,7 @@ import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
+import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.util.ConfigDiagnosticTool;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -43,7 +44,7 @@ public class DiagnosticAction extends AnAction {
             showDiagnosticResult(project, result);
         } catch (Exception ex) {
             LOG.error("[配置诊断] 诊断过程中出错: " + ex.getMessage(), ex);
-            Messages.showErrorDialog(project, "诊断过程中出错: " + ex.getMessage(), "配置诊断");
+            ApplicationManager.getApplication().getService(NotificationService.class).showError("配置诊断出错", ex.getMessage());
         }
     }
 
@@ -198,11 +199,11 @@ public class DiagnosticAction extends AnAction {
                             Messages.showInfoMessage("已重置所有配置，请重启 IDE 以应用更改。", "重置配置");
                             close(OK_EXIT_CODE);
                         } else {
-                            Messages.showErrorDialog("重置配置失败，请查看日志了解详情。", "错误");
+                            ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "重置配置失败，请查看日志了解详情。");
                         }
                     } catch (Exception ex) {
                         LOG.error("[配置诊断] 重置配置时出错: " + ex.getMessage(), ex);
-                        Messages.showErrorDialog("重置配置时出错: " + ex.getMessage(), "错误");
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "重置配置时出错: " + ex.getMessage());
                     }
                 }
             });
@@ -216,11 +217,11 @@ public class DiagnosticAction extends AnAction {
                         Messages.showInfoMessage("已强制保存所有配置。", "保存配置");
                         close(OK_EXIT_CODE);
                     } else {
-                        Messages.showErrorDialog("保存配置失败，请查看日志了解详情。", "错误");
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "保存配置失败，请查看日志了解详情。");
                     }
                 } catch (Exception ex) {
                     LOG.error("[配置诊断] 保存配置时出错: " + ex.getMessage(), ex);
-                    Messages.showErrorDialog("保存配置时出错: " + ex.getMessage(), "错误");
+                    ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "保存配置时出错: " + ex.getMessage());
                 }
             });
 
@@ -233,11 +234,11 @@ public class DiagnosticAction extends AnAction {
                         Messages.showInfoMessage("已应用阅读模式。", "应用阅读模式");
                         close(OK_EXIT_CODE);
                     } else {
-                        Messages.showErrorDialog("应用阅读模式失败，请查看日志了解详情。", "错误");
+                        ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "应用阅读模式失败，请查看日志了解详情。");
                     }
                 } catch (Exception ex) {
                     LOG.error("[配置诊断] 应用阅读模式时出错: " + ex.getMessage(), ex);
-                    Messages.showErrorDialog("应用阅读模式时出错: " + ex.getMessage(), "错误");
+                    ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "应用阅读模式时出错: " + ex.getMessage());
                 }
             });
 

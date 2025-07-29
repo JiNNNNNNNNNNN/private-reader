@@ -7,6 +7,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.lv.tool.privatereader.repository.StorageRepository;
+import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.util.DiagnosticTool;
 import org.jetbrains.annotations.NotNull;
 
@@ -30,7 +31,7 @@ public class DiagnosticAction extends AnAction {
         // 获取StorageRepository服务
         StorageRepository storageRepository = ApplicationManager.getApplication().getService(StorageRepository.class);
         if (storageRepository == null) {
-            Messages.showErrorDialog(project, "无法获取StorageRepository服务", "诊断失败");
+            ApplicationManager.getApplication().getService(NotificationService.class).showError("诊断失败", "无法获取StorageRepository服务");
             return;
         }
         

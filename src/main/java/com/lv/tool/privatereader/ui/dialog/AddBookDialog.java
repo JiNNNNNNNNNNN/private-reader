@@ -10,6 +10,7 @@ import com.intellij.util.ui.JBUI;
 import com.lv.tool.privatereader.exception.ExceptionHandler;
 import com.lv.tool.privatereader.model.Book;
 import com.lv.tool.privatereader.parser.NovelParser;
+import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.parser.ParserFactory;
 import com.lv.tool.privatereader.service.BookService;
 import org.jetbrains.annotations.Nullable;
@@ -64,7 +65,7 @@ public class AddBookDialog extends DialogWrapper {
     protected void doOKAction() {
         String url = urlField.getText().trim();
         if (url.isEmpty()) {
-            Messages.showErrorDialog(project, "请输入书籍网址", "错误");
+            ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "请输入书籍网址");
             return;
         }
 
@@ -72,7 +73,7 @@ public class AddBookDialog extends DialogWrapper {
             // 创建解析器
             NovelParser parser = ParserFactory.createParser(url);
             if (parser == null) {
-                Messages.showErrorDialog(project, "不支持的网站或网址格式不正确", "错误");
+                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "不支持的网站或网址格式不正确");
                 return;
             }
 
@@ -81,7 +82,7 @@ public class AddBookDialog extends DialogWrapper {
             String author = parser.getAuthor();
 
             if (title == null || title.isEmpty()) {
-                Messages.showErrorDialog(project, "无法获取书籍标题", "错误");
+                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "无法获取书籍标题");
                 return;
             }
 
@@ -100,7 +101,7 @@ public class AddBookDialog extends DialogWrapper {
             // 检查服务是否存在
             if (bookService == null) {
                 LOG.error("无法获取 BookService 实例");
-                Messages.showErrorDialog(this.project, "无法添加书籍，服务不可用。", "错误");
+                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "无法添加书籍，服务不可用。");
                 return;
             }
 

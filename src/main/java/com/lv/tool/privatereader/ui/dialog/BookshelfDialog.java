@@ -22,6 +22,7 @@ import com.lv.tool.privatereader.parser.NovelParser;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
+import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.ui.ReaderPanel;
 import com.lv.tool.privatereader.ui.ReaderToolWindowFactory;
 import com.lv.tool.privatereader.ui.topics.BookshelfTopics;
@@ -189,15 +190,15 @@ public class BookshelfDialog extends DialogWrapper {
                 if (result == Messages.YES) {
                     if (readingProgressRepository != null) {
                          try {
-                             readingProgressRepository.resetProgress(selectedBook);
-                             refreshBookList();
-                             Messages.showInfoMessage(project, "已重置进度", "成功");
+                              readingProgressRepository.resetProgress(selectedBook);
+                              refreshBookList();
+                              Messages.showInfoMessage(project, "已重置进度", "成功");
                          } catch (Exception ex) {
-                              Messages.showErrorDialog(project, "重置进度时出错: " + ex.getMessage(), "错误");
+                              ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "重置进度时出错: " + ex.getMessage());
                               LOG.error("Error resetting progress in dialog for book: " + selectedBook.getId(), ex);
                          }
                     } else {
-                         Messages.showErrorDialog(project, "无法获取阅读进度服务", "错误");
+                         ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "无法获取阅读进度服务");
                     }
                 }
             }
@@ -373,7 +374,7 @@ public class BookshelfDialog extends DialogWrapper {
                             SwingUtilities.invokeLater(() -> {
                                 hideLoading();
                                 getOKAction().setEnabled(true);
-                                Messages.showErrorDialog(project, "打开书籍时出错: " + ex.getMessage(), "错误");
+                                ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "打开书籍时出错: " + ex.getMessage());
                             });
                         }
                     });
@@ -391,7 +392,7 @@ public class BookshelfDialog extends DialogWrapper {
                 SwingUtilities.invokeLater(() -> {
                     hideLoading();
                     getOKAction().setEnabled(true);
-                    Messages.showErrorDialog(project, "打开书籍时出错: " + ex.getMessage(), "错误");
+                    ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "打开书籍时出错: " + ex.getMessage());
                 });
             }
 
@@ -453,7 +454,7 @@ public class BookshelfDialog extends DialogWrapper {
             return ReadAction.compute(() -> bookService.getAllBooks().collectList().block(Duration.ofSeconds(10)));
         } catch (Exception e) {
             LOG.error("加载书籍列表时出错", e);
-            Messages.showErrorDialog(project, "加载书籍列表失败: " + e.getMessage(), "错误");
+            ApplicationManager.getApplication().getService(NotificationService.class).showError("错误", "加载书籍列表失败: " + e.getMessage());
             return new ArrayList<>();
         }
     }

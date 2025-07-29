@@ -1705,8 +1705,34 @@ public final class NotificationServiceImpl implements NotificationService, Dispo
                                 return;
                             }
                             
-                            // 总是显示第一页
-                            this.currentPageIndex = 0;
+                            // 尝试恢复页码，否则显示第一页
+                            int pageToLoad = 1;
+                            try {
+                                SqliteReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(SqliteReadingProgressRepository.class);
+                                if (readingProgressRepository != null) {
+                                    Optional<BookProgressData> progressDataOpt = readingProgressRepository.getProgress(changedBook.getId());
+                                    if (progressDataOpt.isPresent()) {
+                                        BookProgressData progressData = progressDataOpt.get();
+                                        if (newChapter.url().equals(progressData.lastReadChapterId())) {
+                                            pageToLoad = progressData.lastReadPage();
+                                            LOG.debug("[事件处理] 成功恢复页码: " + pageToLoad + " for chapter " + newChapter.title());
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                LOG.error("[事件处理] 恢复页码时出错", e);
+                            }
+
+                            if (pageToLoad <= 0) {
+                                pageToLoad = 1;
+                            } else if (!this.currentPages.isEmpty() && pageToLoad > this.currentPages.size()) {
+                                pageToLoad = this.currentPages.size();
+                            } else if (this.currentPages.isEmpty()) {
+                                pageToLoad = 1;
+                            }
+
+                            this.currentPageIndex = pageToLoad - 1;
+                            
                             String pageContentToShow = this.currentPages.get(this.currentPageIndex);
                             String progressText = notificationSettings != null && notificationSettings.isShowReadingProgress() ?
                                  "进度: 第 " + (this.currentPageIndex + 1) + " 页，共 " + this.currentPages.size() + " 页" : "";
