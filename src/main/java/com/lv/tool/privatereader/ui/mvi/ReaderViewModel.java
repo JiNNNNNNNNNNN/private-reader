@@ -96,6 +96,11 @@ public class ReaderViewModel implements Disposable {
             return;
         }
 
+        if (uiState.getValue().isLoadingContent()) {
+            LOG.warn("Already loading chapter content, ignoring new request for " + chapter.title());
+            return;
+        }
+
         uiState.onNext(
                 uiState.getValue().toBuilder()
                         .selectedChapterId(chapter.url())
