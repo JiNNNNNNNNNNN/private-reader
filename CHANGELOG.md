@@ -1,5 +1,12 @@
 # Changelog 更新日志
 
+## [2.2.0] - 2025-07-30
+
+### 功能优化 | Feature Improvements
+- 优化大文件加载性能 | Optimized large file loading performance
+- 调整缓存策略 | Adjusted caching strategy
+- 修复已知问题 | Fixed known issues
+
 ## [2.1.0] - 2025-05-27
 
 ### 功能优化 | Feature Improvements

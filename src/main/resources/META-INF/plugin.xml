@@ -108,24 +108,22 @@
   ]]></description>
 
   <change-notes><![CDATA[
-    <h3>Version 2.1.0</h3>
+    <h3>Version 2.2.0</h3>
     <ul>
       <li>Feature Improvements:
         <ul>
-          <li>Optimized parsing engine performance</li>
-          <li>Improved cache management mechanism</li>
-          <li>Enhanced UI response speed</li>
+          <li>Optimized large file loading performance</li>
+          <li>Adjusted caching strategy</li>
           <li>Fixed known issues</li>
         </ul>
       </li>
     </ul>
-    <h3>2.1.0 版本更新</h3>
+    <h3>2.2.0 版本更新</h3>
     <ul>
       <li>功能优化：
         <ul>
-          <li>优化解析引擎性能</li>
-          <li>改进缓存管理机制</li>
-          <li>增强用户界面响应速度</li>
+          <li>优化大文件加载性能</li>
+          <li>调整缓存策略</li>
           <li>修复已知问题</li>
         </ul>
       </li>
