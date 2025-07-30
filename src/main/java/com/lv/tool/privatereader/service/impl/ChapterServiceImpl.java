@@ -151,13 +151,36 @@ public final class ChapterServiceImpl implements ChapterService {
     
     @Override
     public Mono<String> getChapterContent(@NotNull Book book, @NotNull String chapterId) {
-        return Mono.fromCallable(() -> {
-            NovelParser parser = book.getParser();
-            if (parser == null) {
-                throw new IllegalStateException("Parser not available for book: " + book.getTitle());
+        ensureServicesInitialized();
+        return getInitializedChapterCacheRepository().flatMap(repo -> {
+            // 首先检查有效缓存
+            String cachedContent = repo.getCachedContent(book.getId(), chapterId);
+            if (cachedContent != null) {
+                return Mono.just(cachedContent);
             }
-            return parser.parseChapterContent(chapterId);
-        }).subscribeOn(reactiveSchedulers.io());
+            // 从网络获取
+            return Mono.fromCallable(() -> {
+                NovelParser parser = book.getParser();
+                if (parser == null) {
+                    throw new IllegalStateException("Parser not available for book: " + book.getTitle());
+                }
+                String content = parser.parseChapterContent(chapterId);
+                // 成功后缓存内容
+                if (content != null && !content.isEmpty()) {
+                    repo.cacheContent(book.getId(), chapterId, content);
+                }
+                return content;
+            }).subscribeOn(reactiveSchedulers.io())
+            // 网络失败后回退到备用缓存
+            .onErrorResume(e -> {
+                LOG.warn("从网络获取章节内容失败，回退到缓存: " + e.getMessage());
+                String fallbackContent = repo.getFallbackCachedContent(book.getId(), chapterId);
+                if (fallbackContent != null) {
+                    return Mono.just(fallbackContent);
+                }
+                return Mono.error(e); // 如果备用缓存也没有，则传递原始错误
+            });
+        });
     }
 
     @Override
