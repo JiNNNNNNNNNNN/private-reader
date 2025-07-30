@@ -84,52 +84,8 @@ public final class FileBookRepository implements BookRepository {
         }
     }
 
-    /**
-     * 构造函数 - 通过Application初始化
-     */
-    public FileBookRepository(com.intellij.openapi.application.Application application) {
-        this(application, application.getService(StorageRepository.class));
-
-        if (storageRepository == null) {
-            LOG.error("无法从Application获取StorageRepository服务");
-        }
-    }
-
-    /**
-     * 构造函数 - 通过StorageRepository初始化
-     */
-    @Inject
-    public FileBookRepository(StorageRepository storageRepository) {
-        this.storageRepository = storageRepository;
-        this.gson = createSecureGson();
-
-        // 清空重试计数Map
-        synchronized (chapterFetchRetryCount) {
-            chapterFetchRetryCount.clear();
-        }
-
-        // 启动后台线程，在应用启动后清理和修复损坏的书籍文件
-        javax.swing.SwingUtilities.invokeLater(() -> {
-            try {
-                LOG.info("开始自动检查和修复书籍文件...");
-                // 首先清理损坏的文件
-                int cleanedCount = cleanupCorruptedBooks();
-                LOG.info("已清理 " + cleanedCount + " 个损坏的书籍文件");
-
-                // 然后修复阅读位置和内容
-                int repairedCount = repairMissingReadingContent();
-                LOG.info("已修复 " + repairedCount + " 本书籍的阅读位置");
-            } catch (Exception e) {
-                LOG.error("自动修复过程中出错: " + e.getMessage(), e);
-            }
-        });
-    }
-
-    /**
-     * 构造函数 - 通过Application和StorageRepository初始化
-     */
-    public FileBookRepository(Application application, StorageRepository storageRepository) {
-        this.storageRepository = storageRepository;
+    public FileBookRepository() {
+        this.storageRepository = com.intellij.openapi.application.ApplicationManager.getApplication().getService(StorageRepository.class);
         this.gson = createSecureGson();
 
         // 清空重试计数Map

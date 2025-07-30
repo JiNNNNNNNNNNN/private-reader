@@ -1,9 +1,8 @@
 package com.lv.tool.privatereader.service.impl;
 
-import com.google.inject.Inject;
+import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.async.ReactiveSchedulers;
 import com.lv.tool.privatereader.model.Book;
-import com.lv.tool.privatereader.model.BookProgressData;
 import com.lv.tool.privatereader.repository.BookRepository;
 import com.lv.tool.privatereader.repository.ReadingProgressRepository;
 import com.lv.tool.privatereader.service.BookService;
@@ -11,18 +10,13 @@ import com.lv.tool.privatereader.service.ChapterService;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
 import java.util.Optional;
 
 public class BookServiceImpl implements BookService {
 
-    private final BookRepository bookRepository;
-    private final ReadingProgressRepository readingProgressRepository;
-
-    @Inject
-    public BookServiceImpl(BookRepository bookRepository, ReadingProgressRepository readingProgressRepository) {
-        this.bookRepository = bookRepository;
-        this.readingProgressRepository = readingProgressRepository;
-    }
+    private final BookRepository bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
+    private final ReadingProgressRepository readingProgressRepository = ApplicationManager.getApplication().getService(ReadingProgressRepository.class);
 
     @Override
     public Flux<Book> getAllBooks() {

@@ -33,7 +33,6 @@ public final class RepositoryModule {
     private volatile boolean dataReady = false; // Add dataReady flag
     private boolean initializationOk = true;
     
-    @Inject
     public RepositoryModule() {
         LOG.info("RepositoryModule 初始化...");
         // 延迟初始化仓库实例
@@ -84,7 +83,7 @@ public final class RepositoryModule {
                  this.bookRepository = ApplicationManager.getApplication().getService(BookRepository.class);
                  if (this.bookRepository == null) {
                      LOG.warn("未能从应用服务获取 BookRepository，创建新实例");
-                     this.bookRepository = new FileBookRepository(this.storageRepository); // 需要 StorageRepository
+                     this.bookRepository = new FileBookRepository(); // 需要 StorageRepository
                      if (this.bookRepository == null) {
                           LOG.error("创建 FileBookRepository 新实例失败！");
                           initializationOk = false;
@@ -128,7 +127,7 @@ public final class RepositoryModule {
                 if (this.chapterCacheRepository == null) {
                     LOG.warn("未能从应用服务获取 ChapterCacheRepository，创建新实例");
                     if (this.storageRepository != null) {
-                        this.chapterCacheRepository = new FileChapterCacheRepository(this.storageRepository);
+                        this.chapterCacheRepository = new FileChapterCacheRepository();
                         if (this.chapterCacheRepository == null) {
                             LOG.error("创建 FileChapterCacheRepository 新实例失败！");
                             initializationOk = false;
@@ -146,7 +145,7 @@ public final class RepositoryModule {
                 LOG.error("获取或创建 ChapterCacheRepository 失败，尝试创建新实例", e);
                 if (this.storageRepository != null) {
                     try {
-                        this.chapterCacheRepository = new FileChapterCacheRepository(this.storageRepository);
+                        this.chapterCacheRepository = new FileChapterCacheRepository();
                         if (this.chapterCacheRepository == null) {
                             LOG.error("创建 FileChapterCacheRepository 新实例也失败！");
                             initializationOk = false;

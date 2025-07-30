@@ -34,17 +34,6 @@ public final class FileStorageRepository implements StorageRepository {
     private final Path settingsPath;
     private final Path backupPath;
     
-    /**
-     * 构造函数，用于 IntelliJ 服务系统
-     * 
-     * @param application Application 实例
-     */
-    public FileStorageRepository(Application application) {
-        this();
-        LOG.info("通过 Application 初始化 FileStorageRepository");
-    }
-    
-    @Inject
     public FileStorageRepository() {
         LOG.info("初始化应用级别的 FileStorageRepository");
         

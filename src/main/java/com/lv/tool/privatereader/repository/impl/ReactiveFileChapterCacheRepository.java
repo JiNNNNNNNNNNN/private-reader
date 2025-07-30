@@ -20,7 +20,7 @@ public class ReactiveFileChapterCacheRepository extends ReactiveChapterCacheRepo
      * @param application Application 实例
      */
     public ReactiveFileChapterCacheRepository(Application application) {
-        super(application.getService(CacheSettings.class));
+        super();
         LOG.info("通过 Application 初始化 ReactiveFileChapterCacheRepository");
     }
 } 

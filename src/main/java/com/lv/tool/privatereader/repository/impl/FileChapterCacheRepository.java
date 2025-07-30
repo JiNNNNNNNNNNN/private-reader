@@ -1,6 +1,5 @@
 package com.lv.tool.privatereader.repository.impl;
 
-import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.diagnostic.Logger;
@@ -35,29 +34,9 @@ public final class FileChapterCacheRepository implements ChapterCacheRepository 
     private final StorageRepository storageRepository;
     private final Path cacheDir;
     
-    /**
-     * 构造函数，用于 IntelliJ 服务系统
-     * 
-     * @param application Application 实例
-     */
-    public FileChapterCacheRepository(Application application) {
-        LOG.info("通过 Application 初始化 FileChapterCacheRepository");
-        this.storageRepository = application.getService(StorageRepository.class);
-        
-        if (storageRepository == null) {
-            LOG.error("StorageRepository 服务未初始化");
-            this.cacheDir = Path.of(System.getProperty("user.home"), ".private-reader", "cache");
-        } else {
-            this.cacheDir = Path.of(storageRepository.getCachePath());
-        }
-    }
-    
-    @Inject
-    public FileChapterCacheRepository(StorageRepository storageRepository) {
+    public FileChapterCacheRepository() {
         LOG.info("初始化应用级别的 FileChapterCacheRepository");
-        
-        this.storageRepository = storageRepository;
-        
+        this.storageRepository = com.intellij.openapi.application.ApplicationManager.getApplication().getService(StorageRepository.class);
         if (storageRepository == null) {
             LOG.error("StorageRepository 服务未初始化");
             this.cacheDir = Path.of(System.getProperty("user.home"), ".private-reader", "cache");

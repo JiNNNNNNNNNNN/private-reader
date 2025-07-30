@@ -41,19 +41,8 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
     private final AtomicBoolean cleanupInProgress = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, String> memoryCache = new ConcurrentHashMap<>();
     
-    /**
-     * 构造函数，用于 IntelliJ 服务系统
-     * 
-     * @param application Application 实例
-     */
-    public ReactiveChapterCacheRepositoryImpl(Application application) {
-        this(application.getService(CacheSettings.class));
-        LOG.info("通过 Application 初始化 ReactiveChapterCacheRepositoryImpl");
-    }
-    
-    @Inject
-    public ReactiveChapterCacheRepositoryImpl(CacheSettings cacheSettings) {
-        this.cacheSettings = cacheSettings;
+    public ReactiveChapterCacheRepositoryImpl() {
+        this.cacheSettings = com.intellij.openapi.application.ApplicationManager.getApplication().getService(CacheSettings.class);
         this.cacheDir = initCacheDir();
         
         // 启动定期清理任务

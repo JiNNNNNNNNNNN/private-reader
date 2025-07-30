@@ -28,7 +28,6 @@ public class ReactiveTaskManager {
     private final com.lv.tool.privatereader.async.ReactiveTaskManager globalTaskManager;
     private final Scheduler scheduler;
     
-    @Inject
     public ReactiveTaskManager() {
         // 获取全局ReactiveTaskManager实例
         this.globalTaskManager = com.lv.tool.privatereader.async.ReactiveTaskManager.getInstance();
