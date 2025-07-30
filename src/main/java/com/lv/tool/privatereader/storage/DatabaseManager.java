@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Includes one-time migration logic from old JSON format.
  */
 @Service(Service.Level.APP)
-public final class DatabaseManager implements Disposable {
+public final class DatabaseManager {
     private static final Logger LOG = Logger.getInstance(DatabaseManager.class);
     private static final AtomicBoolean databaseInitialized = new AtomicBoolean(false);
     private static final String MIGRATION_FLAG_KEY = "private.reader.migration.sqlite.v1.complete";
@@ -306,10 +306,4 @@ public final class DatabaseManager implements Disposable {
         }
     }
 
-    @Override
-    public void dispose() {
-        // No shared connection to close anymore.
-        // Resources obtained via getConnection() should be managed by the caller (e.g., using try-with-resources).
-        LOG.debug("DatabaseManager disposed.");
-    }
 } 
