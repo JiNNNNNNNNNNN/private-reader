@@ -38,9 +38,9 @@ public class CacheManager {
             .expireAfterWrite(30, TimeUnit.MINUTES)
             .build();
             
-        // 内容缓存：最多100章内容，1小时过期
+        // 内容缓存：最多20章内容，1小时过期
         contentCache = CacheBuilder.newBuilder()
-            .maximumSize(100)
+            .maximumSize(20)
             .expireAfterWrite(1, TimeUnit.HOURS)
             .build();
     }

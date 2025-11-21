@@ -1,6 +1,5 @@
 package com.lv.tool.privatereader.ui.actions;
 
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
@@ -12,7 +11,7 @@ import org.jetbrains.annotations.NotNull;
  * 刷新章节内容操作
  * 忽略缓存，重新获取当前章节的最新内容
  */
-public class RefreshChapterContentAction extends AnAction {
+public class RefreshChapterContentAction extends BaseAction {
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -33,13 +32,16 @@ public class RefreshChapterContentAction extends AnAction {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
-        Project project = e.getProject();
-        if (project != null) {
-            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
-            // Enable only if panel exists and a chapter is selected
-            e.getPresentation().setEnabled(panel != null && panel.getSelectedChapter() != null);
-        } else {
-            e.getPresentation().setEnabled(false);
+        super.update(e);
+        if (!e.getPresentation().isEnabled()) {
+            return;
         }
+        Project project = e.getProject();
+        if (project == null) {
+            e.getPresentation().setEnabled(false);
+            return;
+        }
+        ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
+        e.getPresentation().setEnabled(panel != null && panel.getSelectedChapter() != null);
     }
 } 

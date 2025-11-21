@@ -37,7 +37,6 @@ public final class ChapterServiceImpl implements ChapterService {
     // 缓存相关
     private final Map<String, List<Chapter>> bookChapterListCache = new ConcurrentHashMap<>();
     private final Map<String, Mono<List<Chapter>>> chapterListMonoCache = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> preloadingChapters = new ConcurrentHashMap<>();
 
     // 引入 Cache，避免重复创建 Mono
     private volatile Mono<ChapterCacheRepository> cachedRepoMono;
@@ -244,45 +243,47 @@ public final class ChapterServiceImpl implements ChapterService {
     public Mono<List<Chapter>> getChapterList(@NotNull Book book) {
         ensureServicesInitialized();
         String bookId = book.getId();
-        LOG.info("获取章节列表: 书籍='" + book.getTitle() + "' (网络优先策略)");
+        LOG.info("获取章节列表: 书籍='" + book.getTitle() + "' (缓存优先策略)");
 
-        // 1. 网络优先：总是先尝试从网络获取最新章节列表
-        return Mono.fromCallable(() -> {
+        // 1. 缓存优先：立即从缓存返回数据
+        Mono<List<Chapter>> cachedChaptersMono = fallbackToCache(book)
+                .filter(chapters -> !chapters.isEmpty());
+
+        // 2. 后台异步从网络获取最新数据
+        Mono<List<Chapter>> networkChaptersMono = Mono.fromCallable(() -> {
                     NovelParser parser = book.getParser();
                     if (parser == null) {
-                        LOG.error("书籍 '" + book.getTitle() + "' 的 NovelParser 未初始化", new Throwable());
-                        // 抛出特定异常，以便在 onErrorResume 中处理
                         throw new IllegalStateException("Parser not initialized for book: " + book.getTitle());
                     }
-                    // 直接调用 parseChapterList，绕过 getChapterList 中陈旧的缓存逻辑
                     return parser.parseChapterList();
                 })
                 .subscribeOn(reactiveSchedulers.io())
-                .flatMap(chaptersFromNetwork -> {
-                    // 2. 成功获取后，验证并更新所有缓存
+                .doOnSuccess(chaptersFromNetwork -> {
                     if (chaptersFromNetwork != null && !chaptersFromNetwork.isEmpty()) {
-                        LOG.info("从网络成功获取 " + chaptersFromNetwork.size() + " 个章节 for '" + book.getTitle() + "'. 更新所有缓存.");
-                        // 更新内存缓存
-                        bookChapterListCache.put(bookId, chaptersFromNetwork);
-                        // 更新 Book 对象自身的持久化缓存
-                        book.setCachedChapters(chaptersFromNetwork);
-                        return Mono.just(chaptersFromNetwork);
+                        LOG.info("后台网络请求成功获取 " + chaptersFromNetwork.size() + " 个章节 for '" + book.getTitle() + "'. 更新缓存.");
+                        // 检查与缓存是否相同，避免不必要的更新
+                        List<Chapter> cachedList = bookChapterListCache.get(bookId);
+                        if (!chaptersFromNetwork.equals(cachedList)) {
+                             // 更新内存缓存
+                            bookChapterListCache.put(bookId, chaptersFromNetwork);
+                            // 更新 Book 对象自身的持久化缓存
+                            book.setCachedChapters(chaptersFromNetwork);
+                            LOG.info("缓存已更新 for '" + book.getTitle() + "'.");
+                        } else {
+                            LOG.info("网络章节列表与缓存一致，无需更新 for '" + book.getTitle() + "'.");
+                        }
                     } else {
-                        LOG.warn("网络获取的章节列表为空 for '" + book.getTitle() + "'. 将尝试使用旧缓存.");
-                        // 返回一个空的 Mono，触发 onErrorResume 中的回退逻辑
-                        return Mono.empty();
+                        LOG.warn("后台网络获取的章节列表为空 for '" + book.getTitle() + "'.");
                     }
                 })
-                // 3. 只有在网络失败或返回空列表时，才回退到旧缓存
-                .onErrorResume(error -> {
-                    LOG.warn("网络获取章节列表失败 for '" + book.getTitle() + "': " + error.getMessage() + ". 正在回退到旧缓存.");
-                    return fallbackToCache(book);
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // 当网络成功但返回空列表时，也回退到旧缓存
-                    LOG.warn("网络获取成功但列表为空 for '" + book.getTitle() + "'. 正在回退到旧缓存.");
-                    return fallbackToCache(book);
-                }));
+                .doOnError(error -> LOG.warn("后台网络获取章节列表失败 for '" + book.getTitle() + "': " + error.getMessage()));
+
+        // 3. 合并缓存和网络请求
+        // a. 立即返回缓存的结果
+        // b. 触发后台网络请求，但不等待其完成
+        // c. 如果缓存为空，则等待网络请求的结果
+        return cachedChaptersMono.switchIfEmpty(networkChaptersMono)
+                .doOnSubscribe(subscription -> networkChaptersMono.subscribe());
     }
 
     /**
@@ -311,80 +312,6 @@ public final class ChapterServiceImpl implements ChapterService {
 
         LOG.error("网络和所有缓存都获取章节列表失败 for book: '" + book.getTitle() + "'");
         return Mono.just(List.of()); // 返回空列表作为最终的失败结果
-    }
-
-    @Override
-    public Flux<Chapter> preloadChapters(@NotNull Book book, @NotNull String currentChapterId, int count) {
-         // 使用 flatMapMany 确保服务初始化后再执行 Flux 相关逻辑
-         return getInitializedChapterCacheRepository().flatMapMany(repo -> {
-             LOG.info(String.format("预加载章节元数据: 书籍='%s', 当前ID=%s, 数量=%d", book.getTitle(), currentChapterId, count));
-
-             // 调用已修改的 getChapterList
-             return Mono.fromCallable(() -> bookChapterListCache.get(book.getId()))
-                 .flatMapMany(chapters -> {
-                     if (chapters == null || chapters.isEmpty()) {
-                         LOG.warn("预加载失败：章节列表尚未缓存 for book: " + book.getTitle());
-                         return Flux.empty();
-                     }
-
-                     AtomicInteger currentIndex = new AtomicInteger(-1);
-                     IntStream.range(0, chapters.size())
-                         .filter(i -> currentChapterId.equals(chapters.get(i).url()))
-                         .findFirst()
-                         .ifPresent(currentIndex::set);
-
-                     if (currentIndex.get() == -1) {
-                         LOG.warn("预加载失败：当前章节 ID '" + currentChapterId + "' 在列表中未找到");
-                         return Flux.empty();
-                     }
-
-                     int startIndex = currentIndex.get() + 1;
-                     int endIndex = Math.min(startIndex + count, chapters.size());
-
-                     if (startIndex >= endIndex) {
-                         LOG.info("没有更多章节可预加载");
-                         return Flux.empty();
-                     }
-
-                     LOG.debug(String.format("预加载章节索引范围 [%d..%d]", startIndex, endIndex - 1));
-                     List<Chapter> chaptersToPreload = chapters.subList(startIndex, endIndex);
-
-                     return Flux.fromIterable(chaptersToPreload)
-                         .doOnNext(chapter -> {
-                             String taskKey = book.getId() + "::" + chapter.url();
-                             if (preloadingChapters.putIfAbsent(taskKey, true) == null) {
-                                 reactiveTaskManager.submitTask(
-                                     "cache-chapter-" + taskKey,
-                                     () -> {
-                                         try {
-                                             NovelParser parser = book.getParser();
-                                             if (parser != null) {
-                                                 String cachedContent = repo.getCachedContent(book.getId(), chapter.url());
-                                                 if (cachedContent == null) {
-                                                     LOG.debug("后台缓存章节: " + chapter.title());
-                                                     String content = parser.parseChapterContent(chapter.url());
-                                                     if (content != null) {
-                                                         repo.cacheContent(book.getId(), chapter.url(), content);
-                                                     }
-                                                 } else {
-                                                     LOG.trace("章节已在缓存中，跳过后台缓存: " + chapter.title());
-                                                 }
-                                             }
-                                         } catch (Exception e) {
-                                             LOG.error("后台预加载章节内容失败: 书籍='" + book.getTitle() + "', 章节='" + chapter.title() + "'", e);
-                                         } finally {
-                                             preloadingChapters.remove(taskKey);
-                                         }
-                                         return null;
-                                     }
-                                 );
-                             } else {
-                                 LOG.debug("章节正在预加载中，跳过重复任务: " + chapter.title());
-                             }
-                         });
-                 });
-            // 不再需要 subscribeOn(io)，因为 getChapterList 和 submitTask 内部会处理
-         });
     }
 
     @Override

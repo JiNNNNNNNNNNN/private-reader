@@ -1087,13 +1087,19 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
         
         currentChapterDisplayLabel.setText(state.getCurrentChapterTitle());
-        contentTextArea.setText(state.getContent());
+        currentChapterDisplayLabel.setText(state.getCurrentChapterTitle());
+        String newContent = state.isLoadingContent() ? "" : state.getContent();
+        if (newContent == null) {
+            newContent = "";
+        }
 
-        // Defer scrolling to the top to ensure the UI has processed the text update.
-        ApplicationManager.getApplication().invokeLater(() -> {
+        // 只有当内容实际发生变化时才更新UI，避免不必要的重绘
+        if (!newContent.equals(contentTextArea.getText())) {
+            contentTextArea.setText(newContent);
+            // 立即将光标和滚动条设置到顶部
             contentTextArea.setCaretPosition(0);
-            contentScrollPane.getVerticalScrollBar().setValue(0);
-        }, ModalityState.defaultModalityState());
+            SwingUtilities.invokeLater(() -> contentScrollPane.getVerticalScrollBar().setValue(0));
+        }
 
         // Handle errors
         // 错误处理逻辑现在由ViewModel通过NotificationService处理，因此UI层面不再需要显示弹窗

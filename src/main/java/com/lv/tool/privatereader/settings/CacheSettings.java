@@ -26,7 +26,7 @@ public class CacheSettings extends BaseSettings<CacheSettings> {
     private boolean enableCache = true; // 默认启用缓存
     private boolean cleanupOnStartup = true; // 默认启动时清理过期缓存
     private boolean preloadNextChapter = true; // 默认预加载下一章
-    private int preloadCount = 3; // 默认预加载数量
+    private int preloadCount = 1; // 默认预加载数量
     private int maxCacheSize = 100; // 默认最大缓存大小（单位：MB）
     private int maxCacheAge = 7; // 默认最大缓存时间（单位：天）
     private boolean enablePreload = true; // 默认启用预加载
@@ -274,7 +274,7 @@ public class CacheSettings extends BaseSettings<CacheSettings> {
         settings.enableCache = true;
         settings.cleanupOnStartup = true;
         settings.preloadNextChapter = true;
-        settings.preloadCount = 3;
+        settings.preloadCount = 1;
         settings.maxCacheSize = 100;
         settings.maxCacheAge = 7;
         settings.enablePreload = true;

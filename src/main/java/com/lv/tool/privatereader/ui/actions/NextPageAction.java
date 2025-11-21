@@ -1,6 +1,5 @@
 package com.lv.tool.privatereader.ui.actions;
 
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.application.ApplicationManager;
@@ -10,7 +9,7 @@ import com.lv.tool.privatereader.service.NotificationService;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
 import org.jetbrains.annotations.NotNull;
 
-public class NextPageAction extends AnAction {
+public class NextPageAction extends BaseAction {
     private static final Logger LOG = Logger.getInstance(NextPageAction.class);
 
     @Override
@@ -44,10 +43,11 @@ public class NextPageAction extends AnAction {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
-        Project project = e.getProject();
+        super.update(e);
+        if (!e.getPresentation().isEnabled()) {
+            return;
+        }
         ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
-
-        // 只在通知栏模式下启用此操作
-        e.getPresentation().setEnabled(project != null && modeSettings != null && modeSettings.isNotificationMode());
+        e.getPresentation().setEnabled(modeSettings.isNotificationMode());
     }
 }

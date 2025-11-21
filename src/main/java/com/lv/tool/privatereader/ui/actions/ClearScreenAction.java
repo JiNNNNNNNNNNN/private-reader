@@ -1,6 +1,5 @@
 package com.lv.tool.privatereader.ui.actions;
 
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
@@ -11,7 +10,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.lv.tool.privatereader.settings.NotificationReaderSettings;
 import org.jetbrains.annotations.NotNull;
 
-public class ClearScreenAction extends AnAction {
+public class ClearScreenAction extends BaseAction {
     private static final int CLEAR_NOTIFICATIONS = 20;  // 生成的通知数量
     private static final String NOTIFICATION_GROUP_ID = "Private Reader";
 

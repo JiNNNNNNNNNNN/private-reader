@@ -40,16 +40,6 @@ public interface ChapterService {
     Mono<List<Chapter>> getChapterList(@NotNull Book book);
 
     /**
-     * 预加载章节
-     *
-     * @param book             书籍
-     * @param currentChapterId 当前章节ID
-     * @param count            预加载数量
-     * @return 预加载的章节流
-     */
-    Flux<Chapter> preloadChapters(@NotNull Book book, @NotNull String currentChapterId, int count);
-
-    /**
      * 清除书籍缓存
      *
      * @param book 书籍

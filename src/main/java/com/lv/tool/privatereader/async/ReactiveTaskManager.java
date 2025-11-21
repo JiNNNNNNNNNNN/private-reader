@@ -1,5 +1,6 @@
 package com.lv.tool.privatereader.async;
 
+import com.intellij.openapi.diagnostic.Logger;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -18,6 +19,7 @@ import java.util.function.Supplier;
  * 使用Project Reactor实现响应式异步任务处理
  */
 public class ReactiveTaskManager {
+    private static final Logger LOG = Logger.getInstance(ReactiveTaskManager.class);
     private static final int CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final long DEFAULT_RETRY_DELAY_MS = 1000;
@@ -41,6 +43,7 @@ public class ReactiveTaskManager {
         final AtomicInteger retryCount = new AtomicInteger();
         volatile Throwable lastError;
         volatile long lastExecutionTime;
+        volatile long startTime;
         
         void recordExecution(long executionTime) {
             totalExecutionTime.addAndGet(executionTime);
@@ -88,15 +91,18 @@ public class ReactiveTaskManager {
         
         Mono<T> taskMono = Mono.fromSupplier(task)
             .subscribeOn(Schedulers.boundedElastic())
-            .doOnSubscribe(s -> System.out.println("开始执行任务: " + taskName))
+            .doOnSubscribe(s -> {
+                taskInfo.startTime = System.currentTimeMillis();
+                LOG.info("开始执行任务: " + taskName);
+            })
             .doOnSuccess(result -> {
-                long executionTime = System.currentTimeMillis() - taskInfo.lastExecutionTime;
+                long executionTime = System.currentTimeMillis() - taskInfo.startTime;
                 taskInfo.recordExecution(executionTime);
-                System.out.println("任务执行成功: " + taskName);
+                LOG.info("任务执行成功: " + taskName + "，耗时: " + executionTime + "ms");
             })
             .doOnError(error -> {
                 taskInfo.recordFailure(error);
-                System.out.println("任务执行失败: " + taskName + ", 错误: " + error.getMessage());
+                LOG.warn("任务执行失败: " + taskName + ", 错误: " + error.getMessage(), error);
                 if (options.errorHandler != null) {
                     options.errorHandler.accept(error);
                 }
@@ -109,7 +115,7 @@ public class ReactiveTaskManager {
                 Retry.backoff(options.maxRetries, Duration.ofMillis(options.retryDelayMs))
                     .doBeforeRetry(retrySignal -> {
                         taskInfo.recordRetry();
-                        System.out.println("重试任务: " + taskName + ", 第" + retrySignal.totalRetries() + "次");
+                        LOG.warn("重试任务: " + taskName + ", 第" + retrySignal.totalRetries() + "次");
                     })
             );
         }
@@ -178,13 +184,13 @@ public class ReactiveTaskManager {
         try {
             int activeCount = runningTasks.size();
             
-            System.out.printf("Reactive Task Pool Status: active=%d%n", activeCount);
+            LOG.info(String.format("Reactive Task Pool Status: active=%d", activeCount));
             
             taskMetrics.forEach((taskName, info) -> {
-                System.out.printf("Task '%s' metrics: %s%n", taskName, info.getMetrics());
+                LOG.info(String.format("Task '%s' metrics: %s", taskName, info.getMetrics()));
             });
         } catch (Exception e) {
-            e.printStackTrace();
+            LOG.error("监控任务执行失败", e);
         }
     }
     

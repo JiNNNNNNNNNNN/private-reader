@@ -1,6 +1,5 @@
 package com.lv.tool.privatereader.ui.actions;
 
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.application.ApplicationManager;
@@ -16,7 +15,7 @@ import org.jetbrains.annotations.NotNull;
  * 上一章操作
  * 用于跳转到当前书籍的上一章节
  */
-public class PrevChapterAction extends AnAction {
+public class PrevChapterAction extends BaseAction {
     private static final Logger LOG = Logger.getInstance(PrevChapterAction.class);
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
@@ -51,25 +50,23 @@ public class PrevChapterAction extends AnAction {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
-        Project project = e.getProject();
-        if (project != null) {
-            NotificationService notificationService = ApplicationManager.getApplication().getService(NotificationService.class);
-            ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        super.update(e);
+        if (!e.getPresentation().isEnabled()) {
+            return;
+        }
 
-            if (notificationService != null && modeSettings != null && modeSettings.isNotificationMode()) {
-                // 在通知栏模式下始终启用此操作
-                e.getPresentation().setEnabled(true);
-            } else {
-                ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
-                if (panel != null) {
-                    boolean enabled = panel.getSelectedChapter() != null;
-                    e.getPresentation().setEnabled(enabled);
-                } else {
-                    e.getPresentation().setEnabled(false);
-                }
-            }
-        } else {
+        Project project = e.getProject();
+        if (project == null) {
             e.getPresentation().setEnabled(false);
+            return;
+        }
+
+        ReaderModeSettings modeSettings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
+        if (modeSettings.isNotificationMode()) {
+            e.getPresentation().setEnabled(true);
+        } else {
+            ReaderPanel panel = ReaderToolWindowFactory.findPanel(project);
+            e.getPresentation().setEnabled(panel != null && panel.getSelectedChapter() != null);
         }
     }
 }

@@ -12,6 +12,7 @@ import com.intellij.ui.content.ContentManagerListener;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.intellij.openapi.project.DumbAware;
+import com.lv.tool.privatereader.util.PluginUtil;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -112,6 +113,6 @@ public class ReaderToolWindowFactory implements ToolWindowFactory, DumbAware {
     
     @Override
     public boolean shouldBeAvailable(@NotNull Project project) {
-        return true;
+        return PluginUtil.isPluginEnabled();
     }
 } 
