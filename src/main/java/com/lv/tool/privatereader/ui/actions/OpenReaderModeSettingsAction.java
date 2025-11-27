@@ -3,7 +3,9 @@ package com.lv.tool.privatereader.ui.actions;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.ShowSettingsUtil;
+import com.lv.tool.privatereader.settings.PluginSettings;
 import com.lv.tool.privatereader.ui.settings.ReaderModeConfigurable;
 import org.jetbrains.annotations.NotNull;
 
@@ -19,6 +21,12 @@ public class OpenReaderModeSettingsAction extends AnAction {
         );
     }
     
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+        PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
+        e.getPresentation().setEnabled(pluginSettings.isEnabled());
+    }
+
     @Override
     @NotNull
     public ActionUpdateThread getActionUpdateThread() {

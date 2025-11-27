@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.project.Project;
+import com.lv.tool.privatereader.settings.PluginSettings;
 import com.lv.tool.privatereader.settings.ReaderModeSettings;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -22,12 +23,17 @@ public class ToggleReadingModeAction extends AnAction {
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
         if (project != null) {
+            PluginSettings pluginSettings = ApplicationManager.getApplication().getService(PluginSettings.class);
+            if (!pluginSettings.isEnabled()) {
+                e.getPresentation().setEnabled(false);
+                return;
+            }
             ReaderModeSettings settings = ApplicationManager.getApplication().getService(ReaderModeSettings.class);
             if (settings != null) {
                 boolean isNotificationMode = settings.isNotificationMode();
-                e.getPresentation().setText(isNotificationMode ? 
+                e.getPresentation().setText(isNotificationMode ?
                     "切换到阅读器模式" : "切换到通知栏模式");
-                e.getPresentation().setDescription(isNotificationMode ? 
+                e.getPresentation().setDescription(isNotificationMode ?
                     "切换到阅读器模式显示内容" : "切换到通知栏模式显示内容");
             }
         }
