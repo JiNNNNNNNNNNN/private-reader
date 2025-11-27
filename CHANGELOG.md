@@ -1,5 +1,12 @@
 # Changelog 更新日志
 
+## [2.3.0] - 2025-11-27
+
+### 功能优化 | Feature Improvements
+- 优化了核心性能 | Optimized core performance
+- 改进了UI响应 | Improved UI responsiveness
+- 修复了一些已知问题 | Fixed several known issues
+
 ## [2.2.0] - 2025-07-30
 
 ### 功能优化 | Feature Improvements
