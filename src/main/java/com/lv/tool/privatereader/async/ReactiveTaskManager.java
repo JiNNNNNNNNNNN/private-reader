@@ -1,5 +1,7 @@
 package com.lv.tool.privatereader.async;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.intellij.openapi.diagnostic.Logger;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -9,6 +11,7 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -25,7 +28,13 @@ public class ReactiveTaskManager {
     private static final long DEFAULT_RETRY_DELAY_MS = 1000;
     private static final long DEFAULT_TIMEOUT_MS = 30000;
     
-    private final Map<String, TaskInfo<?>> taskMetrics = new ConcurrentHashMap<>();
+    // 限制任务指标Map的大小，防止因动态任务名导致的内存泄漏
+    // 最多保留500个任务的指标，写入后24小时过期
+    private final Cache<String, TaskInfo<?>> taskMetrics = CacheBuilder.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(24, TimeUnit.HOURS)
+            .build();
+            
     private final Map<String, Mono<?>> runningTasks = new ConcurrentHashMap<>();
     
     private static class SingletonHolder {
@@ -87,21 +96,27 @@ public class ReactiveTaskManager {
      * @return 包含任务结果的Mono
      */
     public <T> Mono<T> submitTask(String taskName, Supplier<T> task, TaskOptions options) {
-        TaskInfo<T> taskInfo = (TaskInfo<T>) taskMetrics.computeIfAbsent(taskName, k -> new TaskInfo<>());
+        TaskInfo<T> taskInfo;
+        try {
+            taskInfo = (TaskInfo<T>) taskMetrics.get(taskName, TaskInfo::new);
+        } catch (Exception e) {
+            taskInfo = new TaskInfo<>();
+        }
+        final TaskInfo<T> finalTaskInfo = taskInfo;
         
         Mono<T> taskMono = Mono.fromSupplier(task)
             .subscribeOn(Schedulers.boundedElastic())
             .doOnSubscribe(s -> {
-                taskInfo.startTime = System.currentTimeMillis();
+                finalTaskInfo.startTime = System.currentTimeMillis();
                 LOG.info("开始执行任务: " + taskName);
             })
             .doOnSuccess(result -> {
-                long executionTime = System.currentTimeMillis() - taskInfo.startTime;
-                taskInfo.recordExecution(executionTime);
+                long executionTime = System.currentTimeMillis() - finalTaskInfo.startTime;
+                finalTaskInfo.recordExecution(executionTime);
                 LOG.info("任务执行成功: " + taskName + "，耗时: " + executionTime + "ms");
             })
             .doOnError(error -> {
-                taskInfo.recordFailure(error);
+                finalTaskInfo.recordFailure(error);
                 LOG.warn("任务执行失败: " + taskName + ", 错误: " + error.getMessage(), error);
                 if (options.errorHandler != null) {
                     options.errorHandler.accept(error);
@@ -114,7 +129,7 @@ public class ReactiveTaskManager {
             taskMono = taskMono.retryWhen(
                 Retry.backoff(options.maxRetries, Duration.ofMillis(options.retryDelayMs))
                     .doBeforeRetry(retrySignal -> {
-                        taskInfo.recordRetry();
+                        finalTaskInfo.recordRetry();
                         LOG.warn("重试任务: " + taskName + ", 第" + retrySignal.totalRetries() + "次");
                     })
             );
@@ -186,7 +201,7 @@ public class ReactiveTaskManager {
             
             LOG.info(String.format("Reactive Task Pool Status: active=%d", activeCount));
             
-            taskMetrics.forEach((taskName, info) -> {
+            taskMetrics.asMap().forEach((taskName, info) -> {
                 LOG.info(String.format("Task '%s' metrics: %s", taskName, info.getMetrics()));
             });
         } catch (Exception e) {
@@ -237,7 +252,7 @@ public class ReactiveTaskManager {
      * @return 度量信息
      */
     public Map<String, Object> getTaskMetrics(String taskName) {
-        TaskInfo<?> info = taskMetrics.get(taskName);
+        TaskInfo<?> info = taskMetrics.getIfPresent(taskName);
         return info != null ? info.getMetrics() : Map.of();
     }
     
@@ -247,7 +262,7 @@ public class ReactiveTaskManager {
      */
     public Map<String, Map<String, Object>> getAllTaskMetrics() {
         Map<String, Map<String, Object>> allMetrics = new ConcurrentHashMap<>();
-        taskMetrics.forEach((taskName, info) -> 
+        taskMetrics.asMap().forEach((taskName, info) ->
             allMetrics.put(taskName, info.getMetrics()));
         return allMetrics;
     }

@@ -21,7 +21,10 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.concurrent.ConcurrentHashMap;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -39,10 +42,17 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
     private final CacheSettings cacheSettings;
     private final String cacheDir;
     private final AtomicBoolean cleanupInProgress = new AtomicBoolean(false);
-    private final ConcurrentHashMap<String, String> memoryCache = new ConcurrentHashMap<>();
+    // 使用 Guava Cache 替代 ConcurrentHashMap，设置容量限制和过期时间
+    private final Cache<String, String> memoryCache;
     
     public ReactiveChapterCacheRepositoryImpl() {
         this.cacheSettings = com.intellij.openapi.application.ApplicationManager.getApplication().getService(CacheSettings.class);
+        
+        // 初始化内存缓存：最多100个章节，写入后1小时过期
+        this.memoryCache = CacheBuilder.newBuilder()
+            .maximumSize(100)
+            .expireAfterWrite(1, TimeUnit.HOURS)
+            .build();
         this.cacheDir = initCacheDir();
         
         // 启动定期清理任务
@@ -76,7 +86,7 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
         return Mono.defer(() -> {
             // 先检查内存缓存
             String cacheKey = getCacheKey(bookId, chapterId);
-            String cachedContent = memoryCache.get(cacheKey);
+            String cachedContent = memoryCache.getIfPresent(cacheKey);
             if (cachedContent != null) {
                 LOG.debug("从内存缓存获取章节内容: " + cacheKey);
                 return Mono.just(cachedContent);
@@ -118,7 +128,7 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
         return Mono.defer(() -> {
             // 先检查内存缓存
             String cacheKey = getCacheKey(bookId, chapterId);
-            String cachedContent = memoryCache.get(cacheKey);
+            String cachedContent = memoryCache.getIfPresent(cacheKey);
             if (cachedContent != null) {
                 LOG.debug("从内存缓存获取备用章节内容: " + cacheKey);
                 return Mono.just(cachedContent);
@@ -187,8 +197,9 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
     @Override
     public Mono<Void> clearCacheReactive(String bookId) {
         return Mono.defer(() -> {
-            // 清除内存缓存
-            memoryCache.keySet().removeIf(key -> key.startsWith(bookId + ":"));
+            // 清除内存缓存 (Guava Cache 不支持直接按前缀清除，这里简单地清除所有或遍历清除)
+            // 由于 Guava Cache 的 asMap() 返回的视图支持移除操作
+            memoryCache.asMap().keySet().removeIf(key -> key.startsWith(bookId + ":"));
             
             // 清除文件缓存
             File bookCacheDir = new File(cacheDir, bookId);
@@ -218,7 +229,7 @@ public class ReactiveChapterCacheRepositoryImpl implements ReactiveChapterCacheR
     public Mono<Void> clearAllCacheReactive() {
         return Mono.defer(() -> {
             // 清除内存缓存
-            memoryCache.clear();
+            memoryCache.invalidateAll();
             
             // 清除文件缓存
             File cacheDirFile = new File(cacheDir);

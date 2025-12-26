@@ -14,8 +14,9 @@ import org.jetbrains.annotations.Nullable;
 import com.intellij.openapi.project.DumbAware;
 import com.lv.tool.privatereader.util.PluginUtil;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * 阅读器工具窗口工厂
@@ -23,7 +24,8 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ReaderToolWindowFactory implements ToolWindowFactory, DumbAware {
     // Map to store active panels per project
-    public static final ConcurrentMap<Project, ReaderPanel> PROJECT_PANELS = new ConcurrentHashMap<>();
+    // 使用 WeakHashMap 避免 Project 对象泄漏
+    public static final Map<Project, ReaderPanel> PROJECT_PANELS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Logger LOG = Logger.getInstance(ReaderToolWindowFactory.class);
     
     @Override

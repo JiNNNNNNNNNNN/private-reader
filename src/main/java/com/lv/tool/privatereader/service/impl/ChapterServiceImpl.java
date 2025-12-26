@@ -1,5 +1,7 @@
 package com.lv.tool.privatereader.service.impl;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -19,6 +21,7 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
@@ -34,9 +37,18 @@ public final class ChapterServiceImpl implements ChapterService {
     private final ReactiveTaskManager reactiveTaskManager;
     private final ReactiveSchedulers reactiveSchedulers;
 
-    // 缓存相关
-    private final Map<String, List<Chapter>> bookChapterListCache = new ConcurrentHashMap<>();
-    private final Map<String, Mono<List<Chapter>>> chapterListMonoCache = new ConcurrentHashMap<>();
+    // 缓存相关 - 使用 Guava Cache 替代无限制的 ConcurrentHashMap
+    // 书籍章节列表缓存：最多缓存 50 本书的章节列表，访问后 30 分钟过期
+    private final Cache<String, List<Chapter>> bookChapterListCache = CacheBuilder.newBuilder()
+            .maximumSize(50)
+            .expireAfterAccess(30, TimeUnit.MINUTES)
+            .build();
+            
+    // 正在进行的请求缓存：最多 50 个并发请求，写入后 5 分钟过期
+    private final Cache<String, Mono<List<Chapter>>> chapterListMonoCache = CacheBuilder.newBuilder()
+            .maximumSize(50)
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .build();
 
     // 引入 Cache，避免重复创建 Mono
     private volatile Mono<ChapterCacheRepository> cachedRepoMono;
@@ -262,7 +274,7 @@ public final class ChapterServiceImpl implements ChapterService {
                     if (chaptersFromNetwork != null && !chaptersFromNetwork.isEmpty()) {
                         LOG.info("后台网络请求成功获取 " + chaptersFromNetwork.size() + " 个章节 for '" + book.getTitle() + "'. 更新缓存.");
                         // 检查与缓存是否相同，避免不必要的更新
-                        List<Chapter> cachedList = bookChapterListCache.get(bookId);
+                        List<Chapter> cachedList = bookChapterListCache.getIfPresent(bookId);
                         if (!chaptersFromNetwork.equals(cachedList)) {
                              // 更新内存缓存
                             bookChapterListCache.put(bookId, chaptersFromNetwork);
@@ -291,7 +303,7 @@ public final class ChapterServiceImpl implements ChapterService {
      */
     private Mono<List<Chapter>> fallbackToCache(Book book) {
         // 优先检查内存缓存
-        List<Chapter> cachedChapters = bookChapterListCache.get(book.getId());
+        List<Chapter> cachedChapters = bookChapterListCache.getIfPresent(book.getId());
         if (cachedChapters != null && !cachedChapters.isEmpty()) {
             LOG.info("从内存缓存回退成功 for book: '" + book.getTitle() + "'");
             // 同时，确保Book对象自身的缓存也是最新的
@@ -323,8 +335,8 @@ public final class ChapterServiceImpl implements ChapterService {
             LOG.info("清除书籍缓存: " + book.getTitle() + " (ID: " + bookId + ")");
             // 将 Runnable 包装在 Mono 中，并在 io 线程执行
             return Mono.fromRunnable(() -> {
-                bookChapterListCache.remove(bookId);
-                chapterListMonoCache.remove(bookId);
+                bookChapterListCache.invalidate(bookId);
+                chapterListMonoCache.invalidate(bookId);
                 // repo 已确保非 null
                 // if (chapterCacheRepository != null) {
                 repo.clearCache(bookId);
@@ -347,8 +359,8 @@ public final class ChapterServiceImpl implements ChapterService {
              LOG.info("清除所有章节缓存");
              // 将 Runnable 包装在 Mono 中，并在 io 线程执行
              return Mono.fromRunnable(() -> {
-                 bookChapterListCache.clear();
-                 chapterListMonoCache.clear();
+                 bookChapterListCache.invalidateAll();
+                 chapterListMonoCache.invalidateAll();
                  // repo 已确保非 null
                  // if (chapterCacheRepository != null) {
                  repo.clearAllCache();
