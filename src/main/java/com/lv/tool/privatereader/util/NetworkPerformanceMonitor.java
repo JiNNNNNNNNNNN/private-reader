@@ -133,15 +133,9 @@ public class NetworkPerformanceMonitor {
      * 更新响应时间统计
      */
     private void updateResponseTimeStats(long responseTime) {
-        long currentMin = minResponseTime.get();
-        while (responseTime < currentMin && !minResponseTime.compareAndSet(currentMin, responseTime)) {
-            currentMin = minResponseTime.get();
-        }
-        
-        long currentMax = maxResponseTime.get();
-        while (responseTime > currentMax && !maxResponseTime.compareAndSet(currentMax, responseTime)) {
-            currentMax = maxResponseTime.get();
-        }
+        // 使用 accumulateAndGet 替代手动的 CAS 循环，内部实现可能更高效且代码更简洁
+        minResponseTime.accumulateAndGet(responseTime, Math::min);
+        maxResponseTime.accumulateAndGet(responseTime, Math::max);
     }
     
     /**

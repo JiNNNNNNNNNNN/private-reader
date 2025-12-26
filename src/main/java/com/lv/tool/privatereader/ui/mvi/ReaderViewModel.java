@@ -127,6 +127,7 @@ public class ReaderViewModel implements Disposable {
                                     LOG.debug("Published CurrentChapterNotifier event for: " + chapter.title());
 
                                     // After successfully loading a chapter, trigger preloading for adjacent chapters.
+                                    // 减少预加载的频率或数量，以避免CPU过载
                                     preloadAdjacentChapters(book, chapter);
                                 },
                                 error -> {
@@ -444,11 +445,16 @@ public class ReaderViewModel implements Disposable {
            final int indexToPreload = currentIndex;
            // The preloader runs asynchronously, so we just subscribe to it.
            // It's a service, so its lifecycle is managed by the application.
-           chapterPreloader.preloadChaptersReactive(book, indexToPreload).subscribe(
-               v -> { /* onNext is not called for Mono<Void>, do nothing */ },
-               error -> LOG.error("Error initiating chapter preloading", error),
-               () -> LOG.debug("Preloading initiated for chapters around index: " + indexToPreload)
-           );
+           // 优化：使用 subscribeOn(Schedulers.single()) 避免占用过多IO线程
+           // 并且可以考虑限制预加载的数量，比如只预加载下一章
+           // 使用 RxJava3Adapter 将 Reactor Mono 转换为 RxJava Single/Completable 以兼容 Schedulers
+           RxJava3Adapter.from(chapterPreloader.preloadChaptersReactive(book, indexToPreload))
+               .subscribeOn(Schedulers.single())
+               .subscribe(
+                   v -> { /* onNext is not called for Mono<Void>, do nothing */ },
+                   error -> LOG.error("Error initiating chapter preloading", error),
+                   () -> LOG.debug("Preloading initiated for chapters around index: " + indexToPreload)
+               );
        }
    }
 

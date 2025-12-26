@@ -297,10 +297,9 @@ public class ReactiveSchedulers {
             LOG.info("内存使用情况: " + String.format("%.2f", memoryUsagePercent) + "% (" + 
                      formatSize(usedMemory) + "/" + formatSize(maxMemory) + ")");
             
-            // 如果内存使用率过高，触发GC
-            if (memoryUsagePercent > 75) {
-                LOG.warn("内存使用率过高，触发GC");
-                System.gc();
+            // 如果内存使用率过高，仅记录警告，不强制GC
+            if (memoryUsagePercent > 85) {
+                LOG.warn("内存使用率过高: " + String.format("%.2f", memoryUsagePercent) + "%");
             }
             
             // 检查HTTP线程池状态
