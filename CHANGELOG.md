@@ -1,5 +1,12 @@
 # Changelog 更新日志
 
+## [2.4.0] - 2025-12-26
+
+### 架构升级 | Architecture Upgrade
+- 重构 UI 架构为 MVI 模式 | Refactored UI architecture to MVI pattern
+- 增强响应式数据处理 | Enhanced reactive data handling
+- 优化阅读器性能 | Optimized reader performance
+
 ## [2.3.0] - 2025-11-27
 
 ### 功能优化 | Feature Improvements

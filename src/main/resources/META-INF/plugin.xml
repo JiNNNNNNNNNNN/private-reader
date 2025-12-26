@@ -108,23 +108,23 @@
   ]]></description>
 
   <change-notes><![CDATA[
-    <h3>Version 2.3.0</h3>
+    <h3>Version 2.4.0</h3>
     <ul>
-      <li>Feature Improvements:
+      <li>Architecture Upgrade:
         <ul>
-          <li>Optimized core performance</li>
-          <li>Improved UI responsiveness</li>
-          <li>Fixed several known issues</li>
+          <li>Refactored UI architecture to MVI pattern</li>
+          <li>Enhanced reactive data handling</li>
+          <li>Optimized reader performance</li>
         </ul>
       </li>
     </ul>
-    <h3>2.3.0 版本更新</h3>
+    <h3>2.4.0 版本更新</h3>
     <ul>
-      <li>功能优化：
+      <li>架构升级：
         <ul>
-          <li>优化了核心性能</li>
-          <li>改进了UI响应</li>
-          <li>修复了一些已知问题</li>
+          <li>重构 UI 架构为 MVI 模式</li>
+          <li>增强响应式数据处理</li>
+          <li>优化阅读器性能</li>
         </ul>
       </li>
     </ul>
