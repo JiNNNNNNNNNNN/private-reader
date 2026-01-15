@@ -50,6 +50,11 @@ public final class ChapterServiceImpl implements ChapterService {
             .expireAfterWrite(5, TimeUnit.MINUTES)
             .build();
 
+    // 网络请求频率限制缓存：记录上次网络请求时间，避免频繁刷新
+    private final Cache<String, Long> lastNetworkCheckCache = CacheBuilder.newBuilder()
+            .expireAfterWrite(30, TimeUnit.MINUTES)
+            .build();
+
     // 引入 Cache，避免重复创建 Mono
     private volatile Mono<ChapterCacheRepository> cachedRepoMono;
 
@@ -292,10 +297,47 @@ public final class ChapterServiceImpl implements ChapterService {
 
         // 3. 合并缓存和网络请求
         // a. 立即返回缓存的结果
-        // b. 触发后台网络请求，但不等待其完成
+        // b. 触发后台网络请求，但不等待其完成（带频率限制和并发控制）
         // c. 如果缓存为空，则等待网络请求的结果
-        return cachedChaptersMono.switchIfEmpty(networkChaptersMono)
-                .doOnSubscribe(subscription -> networkChaptersMono.subscribe());
+        return cachedChaptersMono
+                .doOnNext(chapters -> {
+                    // 缓存命中时，检查是否需要后台刷新
+                    if (lastNetworkCheckCache.getIfPresent(bookId) == null) {
+                        try {
+                            // 使用 chapterListMonoCache 确保同一时间只有一个后台更新任务在运行
+                            chapterListMonoCache.get(bookId, () -> {
+                                LOG.info("触发后台章节列表更新 for '" + book.getTitle() + "'");
+                                lastNetworkCheckCache.put(bookId, System.currentTimeMillis());
+                                
+                                // 创建并启动任务，任务完成后自动清理并发锁
+                                Mono<List<Chapter>> task = networkChaptersMono
+                                    .doFinally(signal -> chapterListMonoCache.invalidate(bookId));
+                                
+                                task.subscribe();
+                                return task;
+                            });
+                        } catch (Exception e) {
+                            LOG.warn("触发后台更新时发生异常: " + e.getMessage());
+                        }
+                    } else {
+                        LOG.debug("跳过后台章节列表更新 (最近已更新) for '" + book.getTitle() + "'");
+                    }
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    // 缓存未命中，执行网络请求并记录时间
+                    // 同样使用并发控制，防止多个线程同时触发网络请求
+                    try {
+                        return chapterListMonoCache.get(bookId, () -> {
+                            LOG.info("缓存未命中，执行网络请求 for '" + book.getTitle() + "'");
+                            lastNetworkCheckCache.put(bookId, System.currentTimeMillis());
+                            return networkChaptersMono
+                                .doFinally(signal -> chapterListMonoCache.invalidate(bookId));
+                        });
+                    } catch (Exception e) {
+                        LOG.error("获取章节列表失败: " + e.getMessage());
+                        return networkChaptersMono; // 降级处理
+                    }
+                }));
     }
 
     /**
@@ -337,6 +379,7 @@ public final class ChapterServiceImpl implements ChapterService {
             return Mono.fromRunnable(() -> {
                 bookChapterListCache.invalidate(bookId);
                 chapterListMonoCache.invalidate(bookId);
+                lastNetworkCheckCache.invalidate(bookId);
                 // repo 已确保非 null
                 // if (chapterCacheRepository != null) {
                 repo.clearCache(bookId);
@@ -361,6 +404,7 @@ public final class ChapterServiceImpl implements ChapterService {
              return Mono.fromRunnable(() -> {
                  bookChapterListCache.invalidateAll();
                  chapterListMonoCache.invalidateAll();
+                 lastNetworkCheckCache.invalidateAll();
                  // repo 已确保非 null
                  // if (chapterCacheRepository != null) {
                  repo.clearAllCache();
