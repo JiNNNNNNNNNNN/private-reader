@@ -1037,7 +1037,9 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
 
     private void render(ReaderUiState state) {
         // This will be the single source of truth for UI updates.
-        
+        // Update the current state reference immediately so listeners can compare against the new state
+        this.currentUiState = state;
+
         // Update loading indicators and list enabled state
         loadingLabel.setVisible(state.isLoadingBooks() || state.isLoadingChapters() || state.isLoadingContent());
         booksList.setEnabled(!state.isLoadingBooks());
@@ -1109,6 +1111,6 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
         }
 
         // Cache the state after rendering is complete
-        this.currentUiState = state;
+        // this.currentUiState = state; // Moved to the beginning of the method
     }
 }
