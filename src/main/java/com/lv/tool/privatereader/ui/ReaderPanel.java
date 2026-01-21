@@ -134,6 +134,8 @@ public class ReaderPanel extends SimpleToolWindowPanel implements Disposable {
                 if (chapterChangeManager.getLastEventSource() == ChapterChangeEventSource.NOTIFICATION_SERVICE) {
                     if (changedBook != null && newChapterFromEvent != null) {
                         LOG.debug("ReaderPanel (CurrentChapterNotifier) event received. Processing intent. Book: " + changedBook.getTitle() + ", Chapter: " + newChapterFromEvent.title());
+                        // 防止无限循环：将事件源更新为 READER_PANEL，这样当 ViewModel 加载完成并再次发布事件时，ReaderPanel 不会再次处理它
+                        chapterChangeManager.setEventSource(ChapterChangeEventSource.READER_PANEL);
                         viewModel.processIntent(new IReaderIntent.HandleExternalChapterChange(changedBook, newChapterFromEvent));
                     } else {
                         LOG.warn("ReaderPanel (CurrentChapterNotifier): Received null book or chapter in event. Ignoring.");
