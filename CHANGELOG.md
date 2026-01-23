@@ -1,5 +1,11 @@
 # Changelog 更新日志
 
+## [2.4.1] - 2026-01-23
+
+### 功能优化 | Feature Improvements
+- 修复已知问题 | Fixed known issues
+- 性能优化 | Performance optimization
+
 ## [2.4.0] - 2025-12-26
 
 ### 架构升级 | Architecture Upgrade
