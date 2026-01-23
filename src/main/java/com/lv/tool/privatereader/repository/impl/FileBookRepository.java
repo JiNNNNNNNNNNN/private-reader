@@ -596,14 +596,14 @@ public final class FileBookRepository implements BookRepository {
             book.setLastChapter(getStringFromJson(json, "lastChapter", null));
             book.setTotalChapters(getIntFromJson(json, "totalChapters", 0));
 
-            // --- Progress Data --- Remove these fields from JSON parsing
-            // book.setLastReadChapter(getStringFromJson(json, "lastReadChapter", null));
-            // book.setLastReadChapterId(getStringFromJson(json, "lastReadChapterId", null));
-            // book.setLastReadPosition(getIntFromJson(json, "lastReadPosition", 0));
-            // book.setLastReadTimeMillis(getLongFromJson(json, "lastReadTimeMillis", 0));
-            // book.setCurrentChapterIndex(getIntFromJson(json, "currentChapterIndex", 0));
-            // book.setFinished(getBooleanFromJson(json, "finished", false));
-            // book.setLastReadPage(getIntFromJson(json, "lastReadPage", 1));
+            // --- Progress Data --- Restore these fields from JSON parsing
+            book.setLastReadChapter(getStringFromJson(json, "lastReadChapter", null));
+            book.setLastReadChapterId(getStringFromJson(json, "lastReadChapterId", null));
+            book.setLastReadPosition(getIntFromJson(json, "lastReadPosition", 0));
+            book.setLastReadTimeMillis(getLongFromJson(json, "lastReadTimeMillis", 0));
+            book.setCurrentChapterIndex(getIntFromJson(json, "currentChapterIndex", 0));
+            book.setFinished(getBooleanFromJson(json, "finished", false));
+            book.setLastReadPage(getIntFromJson(json, "lastReadPage", 1));
 
             // --- Cached Chapters (Optional - decide if this belongs here or separate cache)
             // If cachedChapters are stored in details.json, keep this part.
@@ -940,6 +940,16 @@ public final class FileBookRepository implements BookRepository {
             bookData.put("createTimeMillis", book.getCreateTimeMillis());
             bookData.put("lastChapter", book.getLastChapter());
             bookData.put("totalChapters", book.getTotalChapters());
+            
+            // Add progress data to details.json to ensure persistence across sessions
+            bookData.put("lastReadChapter", book.getLastReadChapter());
+            bookData.put("lastReadChapterId", book.getLastReadChapterId());
+            bookData.put("lastReadPosition", book.getLastReadPosition());
+            bookData.put("lastReadTimeMillis", book.getLastReadTimeMillis());
+            bookData.put("currentChapterIndex", book.getCurrentChapterIndex());
+            bookData.put("finished", book.isFinished());
+            bookData.put("lastReadPage", book.getLastReadPage());
+
             bookData.put("cachedChapters", book.getCachedChapters() != null ? book.getCachedChapters() : new ArrayList<>());
 
             // 使用Gson序列化为JSON

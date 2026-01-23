@@ -129,6 +129,9 @@ public class ReaderViewModel implements Disposable {
                                     // After successfully loading a chapter, trigger preloading for adjacent chapters.
                                     // 减少预加载的频率或数量，以避免CPU过载
                                     preloadAdjacentChapters(book, chapter);
+
+                                    // Update progress to ensure timestamp is updated in DB (fixes notification bar mode loading old book)
+                                    updateAndSaveProgress(book, chapter);
                                 },
                                 error -> {
                                     LOG.error("Failed to load content for chapter: " + chapter.url(), error);
@@ -140,6 +143,38 @@ public class ReaderViewModel implements Disposable {
                                     );
                                 }
                         )
+        );
+    }
+
+    private void updateAndSaveProgress(Book book, NovelParser.Chapter chapter) {
+        // Fetch latest book from DB to ensure we have the most up-to-date progress (especially lastReadPage)
+        // This prevents overwriting DB with stale data from UI state when switching modes
+        disposables.add(
+            RxJava3Adapter.from(bookService.getBookById(book.getId()))
+                .flatMap(latestBook -> {
+                    int position = 0;
+                    int page = 1;
+
+                    // Check against the latest book state from DB
+                    if (chapter.url().equals(latestBook.getLastReadChapterId())) {
+                        position = latestBook.getLastReadPosition();
+                        page = latestBook.getLastReadPageOrDefault(1);
+                    }
+
+                    // Update the passed book object in memory (updates UI state reference)
+                    book.updateReadingProgress(chapter.url(), position, page);
+                    
+                    // Update latestBook for saving
+                    latestBook.updateReadingProgress(chapter.url(), position, page);
+
+                    return bookService.saveReadingProgress(latestBook, chapter.url(), chapter.title(), position);
+                })
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                    v -> {},
+                    error -> LOG.error("Failed to update progress on chapter load", error),
+                    () -> LOG.debug("Progress updated on chapter load for: " + chapter.title())
+                )
         );
     }
 
@@ -375,15 +410,17 @@ public class ReaderViewModel implements Disposable {
     private void saveProgress(String chapterId, int position) {
         String bookId = uiState.getValue().getSelectedBookId();
         if (bookId == null) return;
-        Book book = findBookInCurrentState(bookId);
-        if (book == null) return;
 
+        // Fetch the latest book state from the service to ensure we have the correct lastReadPage
+        // The book in uiState might be stale (from getAllBooks) and have default page 1
         disposables.add(
-            RxJava3Adapter.from(bookService.saveReadingProgress(book, chapterId, "", position))
+            RxJava3Adapter.from(bookService.getBookById(bookId))
+                .flatMap(book -> bookService.saveReadingProgress(book, chapterId, "", position))
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                    v -> LOG.debug("Progress saved for chapter: " + chapterId),
-                    error -> LOG.error("Failed to save progress for chapter: " + chapterId, error)
+                    v -> {},
+                    error -> LOG.error("Failed to save progress for chapter: " + chapterId, error),
+                    () -> LOG.debug("Progress saved for chapter: " + chapterId)
                 )
         );
     }
